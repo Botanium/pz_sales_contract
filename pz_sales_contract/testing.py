@@ -17,10 +17,17 @@ def setup_fixtures():
             frappe.get_doc(dict(doctype=doctype,**{key:name},is_group=1)).insert()
     if not frappe.db.exists('UOM','Nos'):
         frappe.get_doc(dict(doctype='UOM',uom_name='Nos',must_be_whole_number=1)).insert()
+    if not frappe.db.exists('Party Type','Customer'):
+        frappe.get_doc(dict(doctype='Party Type',party_type='Customer',account_type='Receivable')).insert()
     if not frappe.db.exists('Customer Group','PZ Synthetic Customers'):
         frappe.get_doc(dict(doctype='Customer Group',customer_group_name='PZ Synthetic Customers',parent_customer_group='All Customer Groups',is_group=0)).insert()
     if not frappe.db.exists('Territory','PZ Synthetic Territory'):
         frappe.get_doc(dict(doctype='Territory',territory_name='PZ Synthetic Territory',parent_territory='All Territories',is_group=0)).insert()
+    if not frappe.db.exists('Warehouse Type','Transit'):
+        frappe.get_doc(dict(doctype='Warehouse Type',name='Transit',description='Standard transit prerequisite for synthetic Company')).insert()
+    if not frappe.db.exists('Address Template',{'is_default':1}):
+        frappe.get_doc(dict(doctype='Address Template',country='Iraq',is_default=1,
+            template='{{ address_line1 }}<br>{{ city }}<br>{{ country }}')).insert()
     if not frappe.db.exists('Company', COMPANY):
         frappe.get_doc(dict(doctype='Company', company_name=COMPANY, abbr='PZT',
             default_currency='USD', country='Iraq', chart_of_accounts='Standard',

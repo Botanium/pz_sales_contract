@@ -1,6 +1,6 @@
 # Validation evidence
 
-The app was tested on the connected MacBook using a **new disposable site** in the existing v16 Docker development bench. The existing weighbridge pilot site, records and installed-app configuration were not changed. No production installation, customer delivery or signing took place.
+The app was tested on the connected MacBook using **two disposable sites** in the existing v16 Docker development bench, including a fresh ERPNext site without setup-wizard data. The existing weighbridge pilot site, records and installed-app configuration were not changed. No production installation, customer delivery or signing took place.
 
 ## Tested versions
 
@@ -14,6 +14,8 @@ The app was tested on the connected MacBook using a **new disposable site** in t
 - **6 business-hour unit tests passed**, including holidays/weekends, outside-hour notices, exhausted calendar, missing offset, MariaDB time roundtrip and DST folds. A 24-business-hour deadline accumulates actual open hours.
 - A **real two-process database test passed**: two simultaneous inserts produced one registry and one first family. One transaction retried after native MariaDB snapshot conflict; a failed attempt rolled back cleanly.
 - Native PDF exports passed explicit content/state checks: unpaid first contract **6 pages**, advance-confirmed first contract **6 pages**, returning customer **6 pages**, and 30-line unpaid first contract **8 pages**. Every unpaid continuation page includes DRAFT. All 15 clauses, specifications, payment instructions and signature areas are present. All six ordinary contract pages were visually inspected; no customer data or real payment instructions were used.
+- The same **21 native tests passed on the fresh site**. Synthetic fixtures supply the native setup prerequisites for Customer groups, Territory, Item groups, Customer/Receivable Party Type, Transit Warehouse Type and a default address template. Native invoice advance reconciliation remained part of the suite.
+- Browser QA used an ephemeral synthetic Sales User session: linked contract form, server advance-evidence dialog, currency display and enforced Standard print preview were checked. Temporary browser credentials and UI services were removed afterward. The temporary UI proxy did not provide realtime sockets; console socket errors were unrelated to contract form/print checks.
 - Two independent reviewers examined permissions, payment evidence and print enforcement. Material findings were fixed and affected native checks rerun.
 
 Run native tests on a disposable v16 site with `allow_tests` enabled:
