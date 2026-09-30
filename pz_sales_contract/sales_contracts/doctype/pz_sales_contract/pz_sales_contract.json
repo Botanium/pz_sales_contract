@@ -1,0 +1,572 @@
+{
+  "doctype": "DocType",
+  "name": "PZ Sales Contract",
+  "module": "Sales Contracts",
+  "custom": 0,
+  "istable": 0,
+  "engine": "InnoDB",
+  "field_order": [
+    "parties",
+    "customer",
+    "company",
+    "transaction_date",
+    "delivery_date",
+    "customer_name",
+    "customer_tax_id",
+    "customer_address",
+    "address_display",
+    "contact_person",
+    "contact_display",
+    "seller_address",
+    "seller_address_display",
+    "seller_signatory",
+    "seller_position",
+    "buyer_position",
+    "commercial",
+    "currency",
+    "conversion_rate",
+    "selling_price_list",
+    "items",
+    "discount_amount",
+    "taxes",
+    "subtotal",
+    "tax_total",
+    "grand_total",
+    "advance_required",
+    "balance_required",
+    "in_words",
+    "delivery",
+    "incoterm",
+    "named_place",
+    "delivery_arrangement",
+    "transport_responsibility",
+    "insurance_responsibility",
+    "measurement_basis",
+    "timezone",
+    "business_days",
+    "opens_at",
+    "closes_at",
+    "holiday_list",
+    "notice_channel",
+    "collection_grace",
+    "grace_unit",
+    "collection_arrangement",
+    "delay_charges",
+    "penalty_basis_cap",
+    "cure_period",
+    "latent_claim_period",
+    "force_majeure_threshold",
+    "governing_law",
+    "courts",
+    "specs",
+    "specifications",
+    "payment",
+    "beneficiary",
+    "bank_branch",
+    "account_iban",
+    "swift_reference",
+    "records",
+    "approval_received",
+    "approval_evidence",
+    "advance_deadline",
+    "ready_received",
+    "ready_evidence",
+    "balance_deadline",
+    "collection_deadline",
+    "internal",
+    "sales_order",
+    "first_family",
+    "amended_from"
+  ],
+  "fields": [
+    {
+      "fieldname": "parties",
+      "label": "Parties",
+      "fieldtype": "Section Break"
+    },
+    {
+      "fieldname": "customer",
+      "label": "Customer",
+      "fieldtype": "Link",
+      "options": "Customer",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "company",
+      "label": "Seller company",
+      "fieldtype": "Link",
+      "options": "Company",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "transaction_date",
+      "label": "Contract date",
+      "fieldtype": "Date",
+      "reqd": 1
+    },
+    {
+      "fieldname": "delivery_date",
+      "label": "Planned delivery date",
+      "fieldtype": "Date",
+      "reqd": 1
+    },
+    {
+      "fieldname": "customer_name",
+      "label": "Customer legal name",
+      "fieldtype": "Data",
+      "read_only": 1
+    },
+    {
+      "fieldname": "customer_tax_id",
+      "label": "Customer registration / tax ID",
+      "fieldtype": "Data",
+      "read_only": 1
+    },
+    {
+      "fieldname": "customer_address",
+      "label": "Customer address",
+      "fieldtype": "Link",
+      "options": "Address",
+      "reqd": 1
+    },
+    {
+      "fieldname": "address_display",
+      "label": "Address snapshot",
+      "fieldtype": "Small Text",
+      "read_only": 1
+    },
+    {
+      "fieldname": "contact_person",
+      "label": "Buyer contact",
+      "fieldtype": "Link",
+      "options": "Contact",
+      "reqd": 1
+    },
+    {
+      "fieldname": "contact_display",
+      "label": "Buyer representative / title / email / phone",
+      "fieldtype": "Small Text",
+      "read_only": 1
+    },
+    {
+      "fieldname": "seller_address",
+      "label": "Seller address",
+      "fieldtype": "Link",
+      "options": "Address",
+      "reqd": 1
+    },
+    {
+      "fieldname": "seller_address_display",
+      "label": "Seller address snapshot",
+      "fieldtype": "Small Text",
+      "read_only": 1
+    },
+    {
+      "fieldname": "seller_signatory",
+      "label": "Authorised seller signatory",
+      "fieldtype": "Data",
+      "reqd": 1
+    },
+    {
+      "fieldname": "seller_position",
+      "label": "Seller signatory position",
+      "fieldtype": "Data",
+      "reqd": 1
+    },
+    {
+      "fieldname": "buyer_position",
+      "label": "Buyer signatory position",
+      "fieldtype": "Data",
+      "reqd": 1
+    },
+    {
+      "fieldname": "commercial",
+      "label": "Products and price",
+      "fieldtype": "Section Break"
+    },
+    {
+      "fieldname": "currency",
+      "label": "Currency",
+      "fieldtype": "Link",
+      "options": "Currency",
+      "reqd": 1
+    },
+    {
+      "fieldname": "conversion_rate",
+      "label": "Exchange rate to company currency",
+      "fieldtype": "Float",
+      "reqd": 1
+    },
+    {
+      "fieldname": "selling_price_list",
+      "label": "Selling price list",
+      "fieldtype": "Link",
+      "options": "Price List",
+      "reqd": 1
+    },
+    {
+      "fieldname": "items",
+      "label": "Products",
+      "fieldtype": "Table",
+      "options": "PZ Contract Item",
+      "reqd": 1
+    },
+    {
+      "fieldname": "discount_amount",
+      "label": "Discount on net total",
+      "fieldtype": "Currency",
+      "options": "currency"
+    },
+    {
+      "fieldname": "taxes",
+      "label": "Taxes / charges",
+      "fieldtype": "Table",
+      "options": "Sales Taxes and Charges"
+    },
+    {
+      "fieldname": "subtotal",
+      "label": "Subtotal",
+      "fieldtype": "Currency",
+      "options": "currency",
+      "read_only": 1
+    },
+    {
+      "fieldname": "tax_total",
+      "label": "Taxes / charges total",
+      "fieldtype": "Currency",
+      "options": "currency",
+      "read_only": 1
+    },
+    {
+      "fieldname": "grand_total",
+      "label": "Contract total",
+      "fieldtype": "Currency",
+      "options": "currency",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "advance_required",
+      "label": "Required advance (30%)",
+      "fieldtype": "Currency",
+      "options": "currency",
+      "read_only": 1
+    },
+    {
+      "fieldname": "balance_required",
+      "label": "Balance (70%)",
+      "fieldtype": "Currency",
+      "options": "currency",
+      "read_only": 1
+    },
+    {
+      "fieldname": "in_words",
+      "label": "Amount in words",
+      "fieldtype": "Data",
+      "read_only": 1
+    },
+    {
+      "fieldname": "delivery",
+      "label": "Delivery and Commercial Schedule",
+      "fieldtype": "Section Break"
+    },
+    {
+      "fieldname": "incoterm",
+      "label": "Incoterm",
+      "fieldtype": "Link",
+      "options": "Incoterm",
+      "reqd": 1
+    },
+    {
+      "fieldname": "named_place",
+      "label": "Incoterm named place",
+      "fieldtype": "Data",
+      "reqd": 1
+    },
+    {
+      "fieldname": "delivery_arrangement",
+      "label": "Signed delivery / risk arrangement",
+      "fieldtype": "Small Text",
+      "reqd": 1
+    },
+    {
+      "fieldname": "transport_responsibility",
+      "label": "Transport responsibility",
+      "fieldtype": "Small Text",
+      "reqd": 1
+    },
+    {
+      "fieldname": "insurance_responsibility",
+      "label": "Insurance responsibility",
+      "fieldtype": "Small Text",
+      "reqd": 1
+    },
+    {
+      "fieldname": "measurement_basis",
+      "label": "Measurement basis / tolerance / price adjustment",
+      "fieldtype": "Small Text",
+      "reqd": 1
+    },
+    {
+      "fieldname": "timezone",
+      "label": "Business IANA time zone",
+      "fieldtype": "Data",
+      "reqd": 1
+    },
+    {
+      "fieldname": "business_days",
+      "label": "Business days (Monday,Tuesday,...)",
+      "fieldtype": "Data",
+      "reqd": 1
+    },
+    {
+      "fieldname": "opens_at",
+      "label": "Opening time",
+      "fieldtype": "Time",
+      "reqd": 1
+    },
+    {
+      "fieldname": "closes_at",
+      "label": "Closing time",
+      "fieldtype": "Time",
+      "reqd": 1
+    },
+    {
+      "fieldname": "holiday_list",
+      "label": "Agreed holiday calendar",
+      "fieldtype": "Link",
+      "options": "Holiday List",
+      "reqd": 1
+    },
+    {
+      "fieldname": "notice_channel",
+      "label": "Agreed written notice channel",
+      "fieldtype": "Data",
+      "reqd": 1
+    },
+    {
+      "fieldname": "collection_grace",
+      "label": "Collection grace period",
+      "fieldtype": "Float",
+      "reqd": 1
+    },
+    {
+      "fieldname": "grace_unit",
+      "label": "Collection grace unit",
+      "fieldtype": "Select",
+      "options": "\nCalendar hours\nBusiness hours",
+      "reqd": 1
+    },
+    {
+      "fieldname": "collection_arrangement",
+      "label": "Readiness / pickup window and instructions",
+      "fieldtype": "Small Text",
+      "reqd": 1
+    },
+    {
+      "fieldname": "delay_charges",
+      "label": "Storage / handling / reheating / reloading / demurrage bases",
+      "fieldtype": "Small Text",
+      "reqd": 1
+    },
+    {
+      "fieldname": "penalty_basis_cap",
+      "label": "Penalty / delay compensation basis and cap (or expressly none)",
+      "fieldtype": "Small Text",
+      "reqd": 1
+    },
+    {
+      "fieldname": "cure_period",
+      "label": "Default cure period",
+      "fieldtype": "Data",
+      "reqd": 1
+    },
+    {
+      "fieldname": "latent_claim_period",
+      "label": "Latent defect notification period",
+      "fieldtype": "Data",
+      "reqd": 1
+    },
+    {
+      "fieldname": "force_majeure_threshold",
+      "label": "Force majeure termination threshold",
+      "fieldtype": "Data",
+      "reqd": 1
+    },
+    {
+      "fieldname": "governing_law",
+      "label": "Governing law",
+      "fieldtype": "Data",
+      "reqd": 1
+    },
+    {
+      "fieldname": "courts",
+      "label": "Agreed courts",
+      "fieldtype": "Data",
+      "reqd": 1
+    },
+    {
+      "fieldname": "specs",
+      "label": "Agreed specifications",
+      "fieldtype": "Section Break"
+    },
+    {
+      "fieldname": "specifications",
+      "label": "Product specifications",
+      "fieldtype": "Table",
+      "options": "PZ Contract Specification",
+      "reqd": 1
+    },
+    {
+      "fieldname": "payment",
+      "label": "Verified payment instructions",
+      "fieldtype": "Section Break"
+    },
+    {
+      "fieldname": "beneficiary",
+      "label": "Account beneficiary",
+      "fieldtype": "Data",
+      "reqd": 1
+    },
+    {
+      "fieldname": "bank_branch",
+      "label": "Bank / branch",
+      "fieldtype": "Data",
+      "reqd": 1
+    },
+    {
+      "fieldname": "account_iban",
+      "label": "Currency / account / IBAN",
+      "fieldtype": "Data",
+      "reqd": 1
+    },
+    {
+      "fieldname": "swift_reference",
+      "label": "SWIFT / payment reference",
+      "fieldtype": "Data",
+      "reqd": 1
+    },
+    {
+      "fieldname": "records",
+      "label": "Approval and collection record",
+      "fieldtype": "Section Break"
+    },
+    {
+      "fieldname": "approval_received",
+      "label": "Order Approval received (ISO 8601 with offset)",
+      "fieldtype": "Data",
+      "allow_on_submit": 1
+    },
+    {
+      "fieldname": "approval_evidence",
+      "label": "Written buyer approval and seller acceptance evidence",
+      "fieldtype": "Small Text",
+      "allow_on_submit": 1
+    },
+    {
+      "fieldname": "advance_deadline",
+      "label": "30% advance deadline (business time zone)",
+      "fieldtype": "Data",
+      "read_only": 1,
+      "allow_on_submit": 1
+    },
+    {
+      "fieldname": "ready_received",
+      "label": "Ready Notice received (ISO 8601 with offset)",
+      "fieldtype": "Data",
+      "allow_on_submit": 1
+    },
+    {
+      "fieldname": "ready_evidence",
+      "label": "Ready Notice reliable delivery evidence",
+      "fieldtype": "Small Text",
+      "allow_on_submit": 1
+    },
+    {
+      "fieldname": "balance_deadline",
+      "label": "70% balance deadline (business time zone)",
+      "fieldtype": "Data",
+      "read_only": 1,
+      "allow_on_submit": 1
+    },
+    {
+      "fieldname": "collection_deadline",
+      "label": "Collection deadline (business time zone)",
+      "fieldtype": "Data",
+      "read_only": 1,
+      "allow_on_submit": 1
+    },
+    {
+      "fieldname": "internal",
+      "label": "ERP control (independent of payment marker)",
+      "fieldtype": "Section Break"
+    },
+    {
+      "fieldname": "sales_order",
+      "label": "Linked ERP Sales Order",
+      "fieldtype": "Link",
+      "options": "Sales Order",
+      "read_only": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "first_family",
+      "label": "Contract family",
+      "fieldtype": "Data",
+      "read_only": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "amended_from",
+      "label": "Amended from",
+      "fieldtype": "Link",
+      "options": "PZ Sales Contract",
+      "read_only": 1,
+      "no_copy": 1
+    }
+  ],
+  "permissions": [
+    {
+      "role": "Sales User",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "print": 1,
+      "email": 0,
+      "export": 0
+    },
+    {
+      "role": "Sales Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "submit": 1,
+      "cancel": 1,
+      "amend": 1,
+      "print": 1
+    },
+    {
+      "role": "Accounts Manager",
+      "read": 1,
+      "print": 1
+    },
+    {
+      "role": "System Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "submit": 1,
+      "cancel": 1,
+      "amend": 1,
+      "print": 1
+    }
+  ],
+  "track_changes": 1,
+  "is_submittable": 1,
+  "autoname": "format:PZ-SC-{YYYY}-{#####}",
+  "title_field": "customer_name",
+  "default_print_format": "Petrol Zone Sales Contract",
+  "allow_rename": 0
+}

@@ -1,0 +1,31 @@
+{
+  "doctype": "DocType",
+  "name": "PZ Contract Registry",
+  "module": "Sales Contracts",
+  "custom": 0,
+  "istable": 0,
+  "engine": "InnoDB",
+  "field_order": [
+    "customer",
+    "first_family"
+  ],
+  "fields": [
+    {
+      "fieldname": "customer",
+      "label": "Customer",
+      "fieldtype": "Link",
+      "options": "Customer",
+      "unique": 1,
+      "reqd": 1
+    },
+    {
+      "fieldname": "first_family",
+      "label": "First contract family",
+      "fieldtype": "Data",
+      "reqd": 1
+    }
+  ],
+  "permissions": [],
+  "track_changes": 1,
+  "autoname": "field:customer"
+}

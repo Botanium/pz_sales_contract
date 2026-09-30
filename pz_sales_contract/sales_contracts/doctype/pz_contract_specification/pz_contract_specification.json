@@ -1,0 +1,54 @@
+{
+  "doctype": "DocType",
+  "name": "PZ Contract Specification",
+  "module": "Sales Contracts",
+  "custom": 0,
+  "istable": 1,
+  "engine": "InnoDB",
+  "field_order": [
+    "item_code",
+    "property",
+    "unit",
+    "test_method",
+    "requirement"
+  ],
+  "fields": [
+    {
+      "fieldname": "item_code",
+      "label": "Item",
+      "fieldtype": "Link",
+      "options": "Item",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "property",
+      "label": "Property",
+      "fieldtype": "Data",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "unit",
+      "label": "Unit",
+      "fieldtype": "Data",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "test_method",
+      "label": "Test method",
+      "fieldtype": "Data",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "requirement",
+      "label": "Requirement",
+      "fieldtype": "Small Text",
+      "reqd": 1,
+      "in_list_view": 1
+    }
+  ],
+  "permissions": [],
+  "track_changes": 1
+}

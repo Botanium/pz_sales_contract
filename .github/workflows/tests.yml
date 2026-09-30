@@ -1,0 +1,64 @@
+name: Tests
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  calendar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - run: python -m unittest discover -s tests -v
+      - run: python -m compileall -q pz_sales_contract
+  integration-v16:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      mariadb:
+        image: mariadb:11.8
+        env:
+          MARIADB_ROOT_PASSWORD: ci-synthetic-only
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+      redis-cache:
+        image: redis:7-alpine
+        ports:
+          - 13000:6379
+      redis-queue:
+        image: redis:7-alpine
+        ports:
+          - 11000:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Build isolated v16 bench
+        run: |
+          pip install frappe-bench
+          npm install -g yarn
+          bench init --frappe-branch version-16 --skip-redis-config --skip-assets /tmp/pz-bench
+          cd /tmp/pz-bench
+          bench set-config -g redis_cache redis://127.0.0.1:13000
+          bench set-config -g redis_queue redis://127.0.0.1:11000
+          bench set-config -g redis_socketio redis://127.0.0.1:11000
+          bench get-app --branch version-16 --skip-assets https://github.com/frappe/erpnext
+          ln -s "$GITHUB_WORKSPACE" apps/pz_sales_contract
+          env/bin/pip install -e apps/pz_sales_contract
+          printf '\npz_sales_contract\n' >> sites/apps.txt
+          bench new-site pz-contract-ci.localhost --db-host 127.0.0.1 --db-root-password ci-synthetic-only --admin-password synthetic-ci-only --mariadb-user-host-login-scope '%' --install-app erpnext
+          bench --site pz-contract-ci.localhost install-app pz_sales_contract
+          bench --site pz-contract-ci.localhost set-config allow_tests true
+      - name: Test native ERPNext integration
+        working-directory: /tmp/pz-bench
+        run: bench --site pz-contract-ci.localhost run-tests --app pz_sales_contract
