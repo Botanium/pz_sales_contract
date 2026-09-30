@@ -59,6 +59,8 @@ jobs:
           bench new-site pz-contract-ci.localhost --db-host 127.0.0.1 --db-root-password ci-synthetic-only --admin-password synthetic-ci-only --mariadb-user-host-login-scope '%' --install-app erpnext
           bench --site pz-contract-ci.localhost install-app pz_sales_contract
           bench --site pz-contract-ci.localhost set-config allow_tests true
+          # Native printview requires Frappe's actual asset manifest and print CSS.
+          bench build --app frappe
       - name: Test native ERPNext integration
         working-directory: /tmp/pz-bench
         run: bench --site pz-contract-ci.localhost run-tests --app pz_sales_contract
