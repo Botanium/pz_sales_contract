@@ -273,3 +273,95 @@ class TestPZSalesContract(IntegrationTestCase):
         html=frappe.get_print(d.doctype,d.name,print_format='Standard',no_letterhead=1)
         self.assertNotIn('Later master change',html)
         self.assertIn('Synthetic closure',html)
+
+    def historical_order(self):
+        from pz_sales_contract.testing import new_customer
+        customer,address,contact=new_customer()
+        order=frappe.get_doc(dict(doctype='Sales Order',customer=customer,company=COMPANY,
+            transaction_date=today(),delivery_date=today(),currency='USD',conversion_rate=1,
+            selling_price_list='PZ Synthetic USD',order_type='Sales',customer_address=address.name,
+            contact_person=contact.name,items=[dict(item_code='PZ Synthetic Bitumen',qty=10,rate=100,
+            delivery_date=today())])).insert()
+        order.submit()
+        return order
+
+    def historical_designation(self,order):
+        return frappe.get_doc(dict(doctype='PZ Customer History',customer=order.customer,company=order.company,
+            sales_order=order.name,prior_contract_evidence='Synthetic prior signed contract and finance migration review',
+            bank_receiving_account='PZ Synthetic Bank - PZT',cash_receiving_account='PZ Synthetic Cash - PZT')).insert()
+
+    def test_finance_history_establishes_returning_and_cancellation_restores_family(self):
+        order=self.historical_order()
+        p=receipt(frappe._dict(sales_order=order.name),300)
+        bt=reconcile(p,self.bank_account)
+        frappe.set_user('pz-finance@example.invalid')
+        history=self.historical_designation(order)
+        history.submit()
+        self.assertEqual(history.owner,'pz-finance@example.invalid')
+        self.assertIn(p.name,history.validated_evidence)
+        frappe.set_user('Administrator')
+        first=contract(customer=order.customer,submit=True)
+        status=payment_status(first)
+        self.assertTrue(status.established_history)
+        self.assertFalse(status.payment_draft)
+        bt.cancel()
+        self.assertTrue(payment_status(first).payment_draft)
+        frappe.set_user('pz-finance@example.invalid')
+        history.cancel()
+        frappe.set_user('Administrator')
+        self.assertTrue(payment_status(first).payment_draft)
+        later=contract(customer=order.customer,submit=True)
+        self.assertFalse(payment_status(later).payment_draft)
+
+    def test_history_rejects_unpaid_draft_partial_and_cancelled_native_receipts(self):
+        order=self.historical_order()
+        history=self.historical_designation(order)
+        with self.assertRaises(frappe.ValidationError):
+            history.submit()
+        history.reload()
+        draft=receipt(frappe._dict(sales_order=order.name),300,cash=True,submit=False)
+        with self.assertRaises(frappe.ValidationError):
+            history.submit()
+        history.reload()
+        draft.delete()
+        p=receipt(frappe._dict(sales_order=order.name),299,cash=True)
+        with self.assertRaises(frappe.ValidationError):
+            history.submit()
+        history.reload()
+        q=receipt(frappe._dict(sales_order=order.name),1,cash=True)
+        q.cancel()
+        with self.assertRaises(frappe.ValidationError):
+            history.submit()
+        history.reload()
+        p.cancel()
+        self.assertTrue(payment_status(contract(customer=order.customer)).payment_draft)
+
+    def test_sales_user_cannot_designate_history_or_reclassify_current_order(self):
+        order=self.historical_order()
+        receipt(frappe._dict(sales_order=order.name),300,cash=True)
+        frappe.set_user('pz-sales@example.invalid')
+        self.assertFalse(frappe.has_permission('PZ Customer History','create'))
+        self.assertFalse(frappe.has_permission('PZ Customer History','submit'))
+        with self.assertRaises(frappe.PermissionError):
+            self.historical_designation(order)
+        frappe.set_user('Administrator')
+        current=contract(submit=True)
+        receipt(current,300,cash=True)
+        with self.assertRaises(frappe.ValidationError):
+            self.historical_designation(frappe.get_doc('Sales Order',current.sales_order))
+
+    def test_active_history_requires_cancellation_before_replacement(self):
+        order=self.historical_order()
+        receipt(frappe._dict(sales_order=order.name),300,cash=True)
+        first=self.historical_designation(order)
+        first.submit()
+        second=self.historical_designation(order)
+        frappe.db.savepoint('history_replace')
+        with self.assertRaises(frappe.ValidationError):
+            second.submit()
+        frappe.db.rollback(save_point='history_replace')
+        second.reload()
+        first.cancel()
+        second.submit()
+        registry=frappe.db.get_value('PZ Contract Registry',{'customer':order.customer},'established_history')
+        self.assertEqual(registry,second.name)

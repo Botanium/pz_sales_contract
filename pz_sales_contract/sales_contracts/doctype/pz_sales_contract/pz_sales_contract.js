@@ -9,11 +9,11 @@ frappe.ui.form.on("PZ Sales Contract", {
     frm.set_query("selling_price_list", () => ({filters: {enabled: 1, selling: 1}}));
   },
   refresh(frm) {
-    frm.set_intro("The first contract family saved using this app carries DRAFT until the full 30% advance has qualifying bank reconciliation or agreed cash receipt evidence. Historical contracts need rollout review. ERP submission is separate. Save before printing.");
+    frm.set_intro("The first contract family saved using this app carries DRAFT until the full 30% advance has qualifying bank reconciliation or agreed cash receipt evidence. Finance can register verified prior contracts through PZ Customer History. ERP submission is separate. Save before printing.");
     if (!frm.is_new()) frm.add_custom_button("Advance evidence", () => {
       frappe.call({method: "pz_sales_contract.payments.get_status", args: {name: frm.doc.name}, callback(r) {
         const s = r.message;
-        frappe.msgprint({title: "Server payment evidence", message: `${s.payment_draft ? "DRAFT — advance pending" : "Payment marker clear / later contract"}<br>Confirmed receipt allocation: ${frappe.format(s.confirmed, {fieldtype: "Currency", options: frm.doc.currency})}<br>Required advance: ${frappe.format(s.required, {fieldtype: "Currency", options: frm.doc.currency})}<br>ERP status: ${["Unsubmitted", "Submitted", "Cancelled"][frm.doc.docstatus]}`});
+        frappe.msgprint({title: "Server payment evidence", message: `${s.payment_draft ? "DRAFT — advance pending" : "Advance confirmed / established or later contract"}<br>Confirmed receipt allocation: ${frappe.format(s.confirmed, {fieldtype: "Currency", options: frm.doc.currency})}<br>Required advance: ${frappe.format(s.required, {fieldtype: "Currency", options: frm.doc.currency})}<br>ERP status: ${["Unsubmitted", "Submitted", "Cancelled"][frm.doc.docstatus]}`});
       }});
     });
   },

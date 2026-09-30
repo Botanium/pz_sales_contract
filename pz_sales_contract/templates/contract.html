@@ -1,7 +1,7 @@
 {% macro header(section) %}
 <div class="masthead"><img src="{{ logo }}"><div><strong>PETROL ZONE</strong><span>SALES CONTRACT · {{ section }}</span></div><div class="reference">{{ doc.name|e }}<br>{{ doc.transaction_date|e }}</div></div>
 {% if doc.docstatus == 2 %}<div class="draft cancelled">CANCELLED CONTRACT</div>{% elif state.payment_draft %}<div class="draft">DRAFT — FIRST ADVANCE NOT CONFIRMED</div>{% endif %}
-<div class="status">ERP document: {{ erp_status|e }} · Currency: {{ doc.currency|e }} · 30% advance: {{ '%.2f'|format(doc.advance_required) }} · Confirmed receipt allocation: {{ '%.2f'|format(state.confirmed) }}</div>
+<div class="status">{{ "Established customer · finance history verified" if state.established_history else ("First contract family" if state.first_contract else "Returning customer · later contract") }} · ERP document: {{ erp_status|e }} · Currency: {{ doc.currency|e }} · 30% advance: {{ '%.2f'|format(doc.advance_required) }} · Confirmed receipt allocation: {{ '%.2f'|format(state.confirmed) }}</div>
 {% endmacro %}
 {% macro money(n) %}{{ '{:,.2f}'.format(n or 0) }}{% endmacro %}
 <style>

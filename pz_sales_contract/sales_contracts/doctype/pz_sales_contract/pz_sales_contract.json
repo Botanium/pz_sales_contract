@@ -543,7 +543,7 @@
       "fieldtype": "Data",
       "read_only": 1,
       "no_copy": 1,
-      "description": "First family saved using this app. Pre-install contract/payment history is not automatically classified; review historical customers before rollout."
+      "description": "First saved app family is reserved permanently. Restricted finance history designations can establish returning status using valid prior contract and native receipt evidence."
     },
     {
       "fieldname": "amended_from",

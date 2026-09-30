@@ -8,6 +8,15 @@ COMPANY = 'PZ Synthetic QA'
 
 def setup_fixtures():
     frappe.set_user('Administrator')
+    # Fresh ERPNext sites have no setup-wizard tree roots yet. Create only the
+    # synthetic-test prerequisites instead of relying on an existing pilot setup.
+    for doctype,key,name in [('Customer Group','customer_group_name','All Customer Groups'),
+                             ('Territory','territory_name','All Territories'),
+                             ('Item Group','item_group_name','All Item Groups')]:
+        if not frappe.db.exists(doctype,name):
+            frappe.get_doc(dict(doctype=doctype,**{key:name},is_group=1)).insert()
+    if not frappe.db.exists('UOM','Nos'):
+        frappe.get_doc(dict(doctype='UOM',uom_name='Nos',must_be_whole_number=1)).insert()
     if not frappe.db.exists('Customer Group','PZ Synthetic Customers'):
         frappe.get_doc(dict(doctype='Customer Group',customer_group_name='PZ Synthetic Customers',parent_customer_group='All Customer Groups',is_group=0)).insert()
     if not frappe.db.exists('Territory','PZ Synthetic Territory'):
@@ -47,11 +56,11 @@ def setup_fixtures():
         frappe.get_doc(dict(doctype='Address',address_title='PZ Synthetic Seller',address_type='Billing',
             address_line1='Synthetic test location',city='Synthetic City',country='Iraq',
             links=[dict(link_doctype='Company',link_name=COMPANY)])).insert()
-    for email,role in [('pz-sales@example.invalid','Sales User'),('pz-manager@example.invalid','Sales Manager')]:
+    for email,role in [('pz-sales@example.invalid','Sales User'),('pz-manager@example.invalid','Sales Manager'),('pz-finance@example.invalid','Accounts Manager')]:
         if not frappe.db.exists('User',email):
             frappe.get_doc(dict(doctype='User',email=email,first_name='Synthetic',last_name=role,
                 send_welcome_email=0,roles=[dict(role=role)])).insert()
-        if role=='Sales Manager':
+        if role in ['Sales Manager','Accounts Manager']:
             frappe.get_doc('User',email).add_roles('Sales User')
     return ba.name
 

@@ -22,7 +22,9 @@ class PZSalesContract(Document):
             self.first_family = frappe.generate_hash(length=20)
         # A locking current read is essential here: ordinary exists() can read
         # an earlier REPEATABLE READ snapshot even after waiting for Customer.
-        reservation = frappe.db.sql('SELECT name FROM `tabPZ Contract Registry` WHERE customer=%s FOR UPDATE',self.customer)
+        reservation = frappe.db.sql('SELECT name, first_family FROM `tabPZ Contract Registry` WHERE customer=%s FOR UPDATE',self.customer)
+        if reservation and not reservation[0][1]:
+            frappe.db.set_value('PZ Contract Registry',reservation[0][0],'first_family',self.first_family)
         if not reservation:
             frappe.get_doc(dict(doctype='PZ Contract Registry', customer=self.customer,
                 first_family=self.first_family)).insert(ignore_permissions=True)

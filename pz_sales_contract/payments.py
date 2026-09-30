@@ -9,9 +9,8 @@ def number(value):
     return Decimal(str(value or 0))
 
 
-def payment_status(doc):
-    registry = frappe.db.get_value('PZ Contract Registry', {'customer':doc.customer}, 'first_family')
-    first = not registry or registry == doc.first_family
+def allocated_receipts(doc):
+    """Shared native receipt checks for current contracts and restricted history."""
     confirmed = Decimal('0')
     evidence = []
     order_name = doc.sales_order
@@ -82,9 +81,31 @@ def payment_status(doc):
                 amount = min(allocation, paid)
                 confirmed += amount
                 evidence.append(dict(payment_entry=pe.name, allocated=float(amount)))
+    return confirmed, evidence
+
+
+def history_status(history):
+    if history.docstatus != 1 or number(history.advance_required) <= 0:
+        return False
+    confirmed, _ = allocated_receipts(history)
+    return confirmed >= number(history.advance_required)
+
+
+def payment_status(doc):
+    registry = frappe.db.get_value('PZ Contract Registry',{'customer':doc.customer},
+        ['first_family','established_history'],as_dict=True)
+    first = not registry or not registry.first_family or registry.first_family == doc.first_family
+    historical = False
+    if registry and registry.established_history:
+        history = frappe.get_doc('PZ Customer History',registry.established_history)
+        historical = history.customer == doc.customer and history_status(history)
+        if historical:
+            first = False
+    confirmed, evidence = allocated_receipts(doc)
     required = number(doc.advance_required)
-    return frappe._dict(first_contract=first, payment_draft=bool(first and (required <= 0 or confirmed < required)),
-                        required=float(required), confirmed=float(confirmed), evidence=evidence)
+    return frappe._dict(first_contract=first, established_history=historical,
+        payment_draft=bool(first and (required <= 0 or confirmed < required)),
+        required=float(required), confirmed=float(confirmed), evidence=evidence)
 
 
 @frappe.whitelist()

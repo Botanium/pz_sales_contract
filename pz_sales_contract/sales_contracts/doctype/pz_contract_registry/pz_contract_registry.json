@@ -7,7 +7,8 @@
   "engine": "InnoDB",
   "field_order": [
     "customer",
-    "first_family"
+    "first_family",
+    "established_history"
   ],
   "fields": [
     {
@@ -22,10 +23,16 @@
       "fieldname": "first_family",
       "label": "First contract family",
       "fieldtype": "Data",
-      "reqd": 1
+      "reqd": 0
+    },
+    {
+      "fieldname": "established_history",
+      "label": "Validated historical customer designation",
+      "fieldtype": "Link",
+      "options": "PZ Customer History"
     }
   ],
   "permissions": [],
   "track_changes": 1,
- "autoname": "hash"
+  "autoname": "hash"
 }
