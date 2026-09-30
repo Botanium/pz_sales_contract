@@ -47,6 +47,7 @@
     "opens_at",
     "closes_at",
     "holiday_list",
+    "holiday_calendar_snapshot",
     "notice_channel",
     "collection_grace",
     "grace_unit",
@@ -61,6 +62,8 @@
     "specs",
     "specifications",
     "payment",
+    "bank_receiving_account",
+    "cash_receiving_account",
     "beneficiary",
     "bank_branch",
     "account_iban",
@@ -341,6 +344,14 @@
       "reqd": 1
     },
     {
+      "fieldname": "holiday_calendar_snapshot",
+      "label": "Agreed holiday calendar snapshot",
+      "fieldtype": "Code",
+      "options": "JSON",
+      "read_only": 1,
+      "no_copy": 1
+    },
+    {
       "fieldname": "notice_channel",
       "label": "Agreed written notice channel",
       "fieldtype": "Data",
@@ -423,6 +434,21 @@
       "fieldname": "payment",
       "label": "Verified payment instructions",
       "fieldtype": "Section Break"
+    },
+    {
+      "fieldname": "bank_receiving_account",
+      "label": "Nominated bank receiving account",
+      "fieldtype": "Link",
+      "options": "Account",
+      "reqd": 1,
+      "description": "Manager verifies that the payment instructions identify this seller Bank account. Only receipts to this account qualify."
+    },
+    {
+      "fieldname": "cash_receiving_account",
+      "label": "Agreed cash receiving account (optional)",
+      "fieldtype": "Link",
+      "options": "Account",
+      "description": "Select only when cash receipt is agreed. Finance-submitted receipts to this seller Cash account also qualify."
     },
     {
       "fieldname": "beneficiary",
@@ -516,7 +542,8 @@
       "label": "Contract family",
       "fieldtype": "Data",
       "read_only": 1,
-      "no_copy": 1
+      "no_copy": 1,
+      "description": "First family saved using this app. Pre-install contract/payment history is not automatically classified; review historical customers before rollout."
     },
     {
       "fieldname": "amended_from",

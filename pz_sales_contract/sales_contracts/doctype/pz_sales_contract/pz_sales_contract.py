@@ -20,7 +20,10 @@ class PZSalesContract(Document):
             self.first_family = original.first_family
         else:
             self.first_family = frappe.generate_hash(length=20)
-        if not frappe.db.exists('PZ Contract Registry', self.customer):
+        # A locking current read is essential here: ordinary exists() can read
+        # an earlier REPEATABLE READ snapshot even after waiting for Customer.
+        reservation = frappe.db.sql('SELECT name FROM `tabPZ Contract Registry` WHERE customer=%s FOR UPDATE',self.customer)
+        if not reservation:
             frappe.get_doc(dict(doctype='PZ Contract Registry', customer=self.customer,
                 first_family=self.first_family)).insert(ignore_permissions=True)
 
@@ -38,6 +41,7 @@ class PZSalesContract(Document):
         order = self.build_order()
         order.set_missing_values()
         order.calculate_taxes_and_totals()
+        order.set_total_in_words()
         if order.grand_total <= 0 or self.discount_amount < 0 or self.discount_amount > order.total:
             frappe.throw('Contract total must be positive and discount within subtotal')
         self.subtotal = order.total
@@ -50,6 +54,10 @@ class PZSalesContract(Document):
         self.in_words = order.in_words
         for row, item in zip(self.items, order.items, strict=True):
             row.amount = item.amount
+        for row, calculated in zip(self.taxes, order.taxes, strict=True):
+            for key in ['tax_amount','tax_amount_after_discount_amount','base_tax_amount',
+                        'base_tax_amount_after_discount_amount','total','base_total']:
+                row.set(key, calculated.get(key))
 
     def validate_links_and_snapshots(self):
         customer = frappe.get_doc('Customer', self.customer)
@@ -78,6 +86,14 @@ class PZSalesContract(Document):
         price_list = frappe.get_doc('Price List', self.selling_price_list)
         if not price_list.enabled or not price_list.selling or price_list.currency != self.currency:
             frappe.throw('Choose an enabled selling price list in the contract currency')
+        for key, kind in [('bank_receiving_account','Bank'),('cash_receiving_account','Cash')]:
+            if self.get(key):
+                account = frappe.get_doc('Account',self.get(key))
+                account.check_permission('read')
+                if account.company != self.company or account.account_type != kind or account.is_group or account.disabled:
+                    frappe.throw(f'{key} must be an enabled seller {kind} ledger account')
+                if (account.account_currency or currency) != self.currency:
+                    frappe.throw('Nominated receiving accounts must use the contract currency')
         for item in self.items:
             master = frappe.get_doc('Item', item.item_code)
             master.check_permission('read')
@@ -93,13 +109,22 @@ class PZSalesContract(Document):
         if {r.item_code for r in self.specifications} != {r.item_code for r in self.items}:
             frappe.throw('Enter agreed specifications for every product')
         for tax in self.taxes:
-            if tax.charge_type not in ['Actual', 'On Net Total'] or tax.included_in_print_rate or tax.rate < 0 or tax.tax_amount < 0:
+            if tax.charge_type not in ['Actual', 'On Net Total'] or tax.included_in_print_rate or (tax.rate or 0) < 0 or (tax.tax_amount or 0) < 0:
                 frappe.throw('This version supports additional Actual or On Net Total taxes/charges only')
             if frappe.db.get_value('Account', tax.account_head, 'company') != self.company:
                 frappe.throw('Tax / charge accounts must belong to the seller company')
 
     def validate_schedule(self):
-        holiday = frappe.get_doc('Holiday List', self.holiday_list)
+        old = self.get_doc_before_save()
+        if old and old.docstatus == 1 and old.holiday_calendar_snapshot:
+            self.holiday_calendar_snapshot = old.holiday_calendar_snapshot
+            holiday = frappe._dict(frappe.parse_json(self.holiday_calendar_snapshot))
+            holiday.holidays = [frappe._dict(row) for row in holiday.holidays]
+        else:
+            calendar = frappe.get_doc('Holiday List', self.holiday_list)
+            holiday = frappe._dict(name=calendar.name,from_date=str(calendar.from_date),to_date=str(calendar.to_date),
+                holidays=[frappe._dict(holiday_date=str(row.holiday_date),description=row.description) for row in calendar.holidays])
+            self.holiday_calendar_snapshot = frappe.as_json(holiday)
         holidays = {getdate(r.holiday_date) for r in holiday.holidays}
         try:
             schedule(self, holidays)
@@ -153,6 +178,14 @@ class PZSalesContract(Document):
 
     def on_trash(self):
         frappe.throw('Keep saved contracts for the audit trail; cancel or amend instead of deleting')
+
+    def on_cancel(self):
+        if self.sales_order:
+            order = frappe.get_doc('Sales Order', self.sales_order)
+            if order.docstatus == 1:
+                # Native permission/link checks block cancellation with active downstream
+                # receipts, invoices or deliveries. Everything rolls back together.
+                order.cancel()
 
     def before_update_after_submit(self):
         self.validate_schedule()

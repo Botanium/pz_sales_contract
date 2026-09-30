@@ -6,3 +6,7 @@ app_email = "info@petrol-zone.com"
 app_license = "GPL-3.0-or-later"
 required_apps = ["erpnext"]
 pdf_body_html = "pz_sales_contract.printing.pdf_body_html"
+before_request = ["pz_sales_contract.printing.guard_renderer"]
+doc_events = {"Print Format": {"validate": "pz_sales_contract.printing.validate_format"}}
+pdf_header_html = "pz_sales_contract.printing.pdf_header_html"
+pdf_footer_html = "pz_sales_contract.printing.pdf_header_html"

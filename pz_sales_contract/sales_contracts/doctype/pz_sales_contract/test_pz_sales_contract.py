@@ -10,7 +10,8 @@ from pz_sales_contract.testing import setup_fixtures, contract, receipt, reconci
 # Every needed record is created explicitly below. Do not recursively import
 # optional ERPNext fixtures (Payment Gateway belongs to another app in v16).
 IGNORE_TEST_RECORD_DEPENDENCIES = ['Customer','Company','Address','Contact','Currency','Price List',
-    'Incoterm','Holiday List','Sales Order','PZ Sales Contract','Item','UOM','Account','Cost Center','Project']
+    'Incoterm','Holiday List','Sales Order','PZ Sales Contract','Item','UOM','Account','Cost Center','Project',
+    'Location','Branch','Department']
 
 
 class TestPZSalesContract(IntegrationTestCase):
@@ -29,9 +30,11 @@ class TestPZSalesContract(IntegrationTestCase):
         tax_account=frappe.db.get_value('Account',dict(company=COMPANY,is_group=0,root_type='Income'),'name')
         d=contract(discount_amount=100,taxes=[dict(charge_type='On Net Total',account_head=tax_account,description='Synthetic 10%',rate=10)])
         self.assertEqual((d.subtotal,d.tax_total,d.grand_total,d.advance_required),(1000,90,990,297))
+        self.assertEqual(d.taxes[0].tax_amount_after_discount_amount,90)
         d.submit()
         self.assertEqual(frappe.db.get_value('Sales Order',d.sales_order,'grand_total'),990)
         self.assertEqual(d.items[0].item_name,'Synthetic Bitumen')
+        self.assertIn('Nine Hundred And Ninety',d.in_words)
         self.assertIn('Synthetic customer',d.address_display)
 
     def test_first_and_returning_contracts_and_no_toggle(self):
@@ -64,7 +67,7 @@ class TestPZSalesContract(IntegrationTestCase):
         bt2.cancel()
         self.assertTrue(payment_status(d).payment_draft)
         self.assertEqual(payment_status(d).confirmed,100)
-        one.cancel()
+        one.reload().cancel()
         self.assertEqual(payment_status(d).confirmed,0)
 
     def test_partly_bank_reconciled_receipt_is_not_assigned_arbitrarily(self):
@@ -104,7 +107,9 @@ class TestPZSalesContract(IntegrationTestCase):
         d=contract(submit=True)
         family=d.first_family
         d.cancel()
+        self.assertEqual(frappe.db.get_value('Sales Order',d.sales_order,'docstatus'),2)
         amendment=frappe.copy_doc(d)
+        amendment.docstatus=0
         amendment.amended_from=d.name
         amendment.sales_order=None
         amendment.first_family=None
@@ -125,11 +130,15 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertFalse(frappe.has_permission('Payment Entry','submit'))
         self.assertFalse(frappe.has_permission('Bank Transaction','write'))
         self.assertFalse(frappe.has_permission('PZ Contract Registry','write'))
+        created=contract(customer=d.customer)
+        self.assertEqual(created.owner,'pz-sales@example.invalid')
         with self.assertRaises(frappe.PermissionError):
             d.submit()
         self.assertTrue(get_status(d.name).payment_draft)
         frappe.set_user('pz-manager@example.invalid')
         self.assertTrue(frappe.has_permission('PZ Sales Contract','submit'))
+        d.reload().submit()
+        self.assertEqual(frappe.db.get_value('Sales Order',d.sales_order,'docstatus'),1)
 
     def test_print_standard_forged_payload_and_cancelled(self):
         d=contract(submit=True)
@@ -145,8 +154,9 @@ class TestPZSalesContract(IntegrationTestCase):
         output=get_html_and_style(doc=json.dumps(forged,default=str),print_format='Standard')['html']
         self.assertNotIn('FORGED BUYER',output)
         self.assertIn('DRAFT — FIRST ADVANCE NOT CONFIRMED',output)
-        receipt(d,300,cash=True)
+        paid=receipt(d,300,cash=True)
         self.assertNotIn('DRAFT — FIRST ADVANCE NOT CONFIRMED',frappe.get_print('PZ Sales Contract',d.name))
+        paid.cancel()
         d.cancel()
         self.assertIn('CANCELLED CONTRACT',frappe.get_print('PZ Sales Contract',d.name))
 
@@ -160,14 +170,106 @@ class TestPZSalesContract(IntegrationTestCase):
     def test_native_invoice_reconciliation_keeps_receipt_evidence(self):
         from erpnext.selling.doctype.sales_order.sales_order import make_sales_invoice
         d=contract(submit=True)
+        p=receipt(d,300,cash=True)
         si=make_sales_invoice(d.sales_order)
+        si.set_advances()
+        self.assertTrue(si.advances)
+        for advance in si.advances:
+            advance.allocated_amount=advance.advance_amount
         si.insert()
         si.submit()
-        from erpnext.accounts.doctype.payment_entry.payment_entry import get_payment_entry
-        p=get_payment_entry('Sales Invoice',si.name,party_amount=300,bank_amount=300,bank_account='PZ Synthetic Cash - PZT')
-        p.paid_amount=p.received_amount=300
-        p.references[0].allocated_amount=300
-        p.insert().submit()
+        p.reload()
+        self.assertTrue(any(r.reference_doctype=='Sales Invoice' and r.reference_name==si.name for r in p.references))
         self.assertFalse(payment_status(d).payment_draft)
         si.items[0].db_set('sales_order','UNRELATED-SYNTHETIC-ORDER')
         self.assertTrue(payment_status(d).payment_draft)
+
+    def test_customer_rename_does_not_reset_identity(self):
+        first=contract(submit=True)
+        renamed='PZ Synthetic Renamed '+frappe.generate_hash(length=8)
+        frappe.rename_doc('Customer',first.customer,renamed,force=True)
+        first.reload()
+        later=contract(customer=renamed)
+        self.assertTrue(payment_status(first).payment_draft)
+        self.assertFalse(payment_status(later).payment_draft)
+
+    def test_beta_print_renderer_rejected(self):
+        from pz_sales_contract.printing import validate_format,guard_renderer
+        with self.assertRaises(frappe.ValidationError):
+            validate_format(frappe._dict(doc_type='PZ Sales Contract',print_format_builder_beta=1))
+        # Simulate an already configured format in this disposable test site.
+        pf=frappe.get_doc('Print Format','Petrol Zone Sales Contract')
+        pf.db_set('print_format_builder_beta',1)
+        old=frappe.local.form_dict
+        try:
+            frappe.local.form_dict=frappe._dict(doctype='PZ Sales Contract',format=pf.name)
+            with self.assertRaises(frappe.ValidationError): guard_renderer()
+            frappe.local.form_dict=frappe._dict(doctype='PZ Sales Contract')
+            with self.assertRaises(frappe.ValidationError): guard_renderer()
+            frappe.local.form_dict=frappe._dict(doctype='PZ Sales Contract',cmd='frappe.utils.weasyprint.download_pdf',doc=json.dumps({'doctype':'Sales Order'}))
+            with self.assertRaises(frappe.ValidationError): guard_renderer()
+            for command in ['frappe.utils.print_format.download_multi_pdf','frappe.utils.print_format.download_multi_pdf_async']:
+                frappe.local.form_dict=frappe._dict(doctype={'PZ Sales Contract':['synthetic']},cmd=command,format=pf.name)
+                with self.assertRaises(frappe.ValidationError): guard_renderer()
+        finally:
+            frappe.local.form_dict=old
+            pf.db_set('print_format_builder_beta',0)
+
+    def test_tax_zero_after_full_net_discount_and_actual_charge(self):
+        account=frappe.db.get_value('Account',dict(company=COMPANY,is_group=0,root_type='Income'),'name')
+        d=contract(discount_amount=1000,taxes=[
+            dict(charge_type='On Net Total',account_head=account,description='Synthetic 10% discounted to zero',rate=10),
+            dict(charge_type='Actual',account_head=account,description='Synthetic actual handling',tax_amount=10)])
+        self.assertEqual(d.grand_total,10)
+        self.assertEqual(d.taxes[0].tax_amount_after_discount_amount,0)
+        html=frappe.get_print('PZ Sales Contract',d.name)
+        self.assertIn('10.0% / 0.00',html)
+
+    def test_nominated_accounts_and_unagreed_cash(self):
+        d=contract(submit=True,cash_receiving_account=None)
+        receipt(d,300,cash=True)
+        self.assertEqual(payment_status(d).confirmed,0)
+        other=frappe.get_doc(dict(doctype='Account',account_name='PZ Synthetic Other Bank '+frappe.generate_hash(length=5),
+            company=COMPANY,parent_account=frappe.db.get_value('Account','PZ Synthetic Bank - PZT','parent_account'),
+            account_currency='USD',account_type='Bank',is_group=0)).insert()
+        p=receipt(d,300,submit=False)
+        p.paid_to=other.name
+        p.save().submit()
+        p.db_set('clearance_date',today())
+        self.assertEqual(payment_status(d).confirmed,0)
+        invalid=frappe.copy_doc(d)
+        invalid.docstatus=0
+        invalid.bank_receiving_account='PZ Synthetic Cash - PZT'
+        with self.assertRaises(frappe.ValidationError):
+            invalid.insert()
+
+    def test_pre_existing_customer_and_native_receipt_are_not_history_override(self):
+        from pz_sales_contract.testing import new_customer
+        customer,address,contact=new_customer()
+        old_order=frappe.get_doc(dict(doctype='Sales Order',customer=customer,company=COMPANY,
+            transaction_date=today(),delivery_date=today(),currency='USD',conversion_rate=1,
+            selling_price_list='PZ Synthetic USD',order_type='Sales',customer_address=address.name,
+            contact_person=contact.name,items=[dict(item_code='PZ Synthetic Bitumen',qty=10,rate=100,
+            delivery_date=today())])).insert()
+        old_order.submit()
+        old_payment=receipt(frappe._dict(sales_order=old_order.name),300)
+        reconcile(old_payment,self.bank_account)
+        self.assertFalse(frappe.db.exists('PZ Contract Registry',{'customer':customer}))
+        first=contract(customer=customer,submit=True)
+        status=payment_status(first)
+        self.assertTrue(status.first_contract)
+        self.assertTrue(status.payment_draft)
+        self.assertEqual(status.confirmed,0)
+
+    def test_submitted_calendar_is_frozen_for_print_and_deadlines(self):
+        d=contract(submit=True,approval_received='2026-10-01T09:00:00+03:00',approval_evidence='Synthetic written approval')
+        before=d.advance_deadline
+        calendar=frappe.get_doc('Holiday List',d.holiday_list)
+        calendar.append('holidays',dict(holiday_date='2026-10-02',description='Later master change'))
+        calendar.save()
+        d.approval_evidence='Synthetic evidence clarification'
+        d.save()
+        self.assertEqual(d.advance_deadline,before)
+        html=frappe.get_print(d.doctype,d.name,print_format='Standard',no_letterhead=1)
+        self.assertNotIn('Later master change',html)
+        self.assertIn('Synthetic closure',html)

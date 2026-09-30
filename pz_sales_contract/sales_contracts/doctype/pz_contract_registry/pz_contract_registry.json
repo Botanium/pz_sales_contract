@@ -27,5 +27,5 @@
   ],
   "permissions": [],
   "track_changes": 1,
-  "autoname": "field:customer"
+ "autoname": "hash"
 }

@@ -8,12 +8,16 @@ COMPANY = 'PZ Synthetic QA'
 
 def setup_fixtures():
     frappe.set_user('Administrator')
+    if not frappe.db.exists('Customer Group','PZ Synthetic Customers'):
+        frappe.get_doc(dict(doctype='Customer Group',customer_group_name='PZ Synthetic Customers',parent_customer_group='All Customer Groups',is_group=0)).insert()
+    if not frappe.db.exists('Territory','PZ Synthetic Territory'):
+        frappe.get_doc(dict(doctype='Territory',territory_name='PZ Synthetic Territory',parent_territory='All Territories',is_group=0)).insert()
     if not frappe.db.exists('Company', COMPANY):
         frappe.get_doc(dict(doctype='Company', company_name=COMPANY, abbr='PZT',
             default_currency='USD', country='Iraq', chart_of_accounts='Standard',
             enable_perpetual_inventory=0)).insert()
     year=getdate(today()).year
-    if not frappe.db.exists('Fiscal Year', f'PZ Synthetic {year}'):
+    if not frappe.db.exists('Fiscal Year', {'year_start_date':f'{year}-01-01','year_end_date':f'{year}-12-31'}):
         frappe.get_doc(dict(doctype='Fiscal Year', year=f'PZ Synthetic {year}',
             year_start_date=f'{year}-01-01', year_end_date=f'{year}-12-31')).insert()
     if not frappe.db.exists('Price List', 'PZ Synthetic USD'):
@@ -47,20 +51,27 @@ def setup_fixtures():
         if not frappe.db.exists('User',email):
             frappe.get_doc(dict(doctype='User',email=email,first_name='Synthetic',last_name=role,
                 send_welcome_email=0,roles=[dict(role=role)])).insert()
+        if role=='Sales Manager':
+            frappe.get_doc('User',email).add_roles('Sales User')
     return ba.name
+
+
+def new_customer():
+    customer='PZ Synthetic Customer '+frappe.generate_hash(length=8)
+    frappe.get_doc(dict(doctype='Customer',customer_name=customer,customer_type='Company',
+        customer_group='PZ Synthetic Customers',territory='PZ Synthetic Territory')).insert()
+    address=frappe.get_doc(dict(doctype='Address',address_title=customer,address_type='Billing',
+        address_line1='Synthetic customer address',city='Synthetic City',country='Iraq',
+        links=[dict(link_doctype='Customer',link_name=customer)])).insert()
+    contact=frappe.get_doc(dict(doctype='Contact',first_name='Synthetic',last_name='Buyer',
+        email_ids=[dict(email_id='buyer@example.invalid',is_primary=1)],
+        links=[dict(link_doctype='Customer',link_name=customer)])).insert()
+    return customer,address,contact
 
 
 def contract(customer=None, submit=False, **values):
     if not customer:
-        customer='PZ Synthetic Customer '+frappe.generate_hash(length=8)
-        frappe.get_doc(dict(doctype='Customer',customer_name=customer,customer_type='Company',
-            customer_group='All Customer Groups',territory='All Territories')).insert()
-        address=frappe.get_doc(dict(doctype='Address',address_title=customer,address_type='Billing',
-            address_line1='Synthetic customer address',city='Synthetic City',country='Iraq',
-            links=[dict(link_doctype='Customer',link_name=customer)])).insert()
-        contact=frappe.get_doc(dict(doctype='Contact',first_name='Synthetic',last_name='Buyer',
-            email_ids=[dict(email_id='buyer@example.invalid',is_primary=1)],
-            links=[dict(link_doctype='Customer',link_name=customer)])).insert()
+        customer,address,contact=new_customer()
     else:
         address=frappe.get_doc('Address',frappe.db.get_value('Dynamic Link',dict(parenttype='Address',link_doctype='Customer',link_name=customer),'parent'))
         contact=frappe.get_doc('Contact',frappe.db.get_value('Dynamic Link',dict(parenttype='Contact',link_doctype='Customer',link_name=customer),'parent'))
@@ -78,6 +89,7 @@ def contract(customer=None, submit=False, **values):
         collection_arrangement='Synthetic appointment only',delay_charges='None agreed (synthetic)',penalty_basis_cap='None agreed (synthetic)',
         cure_period='5 calendar days (synthetic)',latent_claim_period='7 calendar days after discovery (synthetic)',
         force_majeure_threshold='30 calendar days (synthetic)',governing_law='Synthetic placeholder; not legal advice or real agreement',courts='Synthetic courts placeholder',
+        bank_receiving_account='PZ Synthetic Bank - PZT',cash_receiving_account='PZ Synthetic Cash - PZT',
         beneficiary='SYNTHETIC — DO NOT PAY',bank_branch='SYNTHETIC BANK — NO REAL ACCOUNT',account_iban='USD / SYNTHETIC-NOT-AN-ACCOUNT',swift_reference='SYNTHETIC ONLY')
     d.update(values)
     doc=frappe.get_doc(d).insert()

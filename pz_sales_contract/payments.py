@@ -10,7 +10,7 @@ def number(value):
 
 
 def payment_status(doc):
-    registry = frappe.db.get_value('PZ Contract Registry', doc.customer, 'first_family')
+    registry = frappe.db.get_value('PZ Contract Registry', {'customer':doc.customer}, 'first_family')
     first = not registry or registry == doc.first_family
     confirmed = Decimal('0')
     evidence = []
@@ -49,7 +49,8 @@ def payment_status(doc):
             if paid <= 0 or received <= 0 or paid != received or allocation <= 0 or allocation > paid:
                 continue
             account_type = frappe.db.get_value('Account', pe.paid_to, 'account_type')
-            if account_type not in ['Cash', 'Bank']:
+            nominated = doc.bank_receiving_account if account_type == 'Bank' else doc.cash_receiving_account
+            if account_type not in ['Cash', 'Bank'] or pe.paid_to != nominated:
                 continue
             if account_type == 'Bank' and (not pe.clearance_date or getdate(pe.clearance_date) > getdate(nowdate())):
                 continue
