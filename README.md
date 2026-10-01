@@ -28,6 +28,12 @@ No holiday calendar, legal jurisdiction, fee or deadline is invented. The contra
 
 The supplied 30%/70% percentages are fixed because both the master’s legal clause and signature acknowledgement state them. Additional exclusive Actual or On Net Total taxes/charges and net-total discounts use native Sales Order calculations. Monetary print values use the native field precision; the server supplies advance precision to the payment-evidence dialog, including zero- and three-decimal currencies/settings. Inclusive taxes and compound tax rows are rejected explicitly. Grade, packaging and agreed specification reference are completed per selected ERP Item. No mixed-UOM quantity total is shown.
 
+## Optional company defaults
+
+A System Manager may maintain one **PZ Contract Defaults** record per seller Company. Enter only company details and standard legal or operational terms that have been approved for reuse; this setup is empty by default and does not invent commercial values. Defaults are copied server-side into **blank fields on a new, non-amendment contract only**. Deal-specific customer and product data, quantity, rate, Incoterm, named place, specification, discount and taxes are never defaulted. Sales may change a copied value for an individual deal; each contract is validated by the existing link, currency, account and schedule checks.
+
+If no defaults record exists, the original explicit-entry workflow remains available and all required contract fields remain required. Changing Company on a new form clears the previous Company's seller address, signatory, currency, accounts and terms before loading the newly selected Company's defaults. Each saved contract is self-contained: changing a defaults record later does not rewrite an existing draft, submitted contract, print or Sales Order. Defaults do not change the first-family DRAFT policy, payment evidence, roles or permissions.
+
 ## Installation (administrator action)
 
 On a separately approved v16 bench, install the reviewed revision from `main` and verify its actual Git commit:

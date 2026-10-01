@@ -6,6 +6,9 @@ from frappe.model.document import Document
 from frappe.utils import getdate
 
 from pz_sales_contract.calendar import add_open_hours, schedule
+from pz_sales_contract.sales_contracts.doctype.pz_contract_defaults.pz_contract_defaults import (
+    COMPANY_DEFAULT_FIELDS,
+)
 
 
 class PZSalesContract(Document):
@@ -29,6 +32,27 @@ class PZSalesContract(Document):
         if not reservation:
             frappe.get_doc(dict(doctype='PZ Contract Registry', customer=self.customer,
                 first_family=self.first_family)).insert(ignore_permissions=True)
+
+    def before_validate(self):
+        # Copy configured company values into blanks on creation only. The saved
+        # contract remains its own snapshot if the defaults are changed later.
+        # Amendments must preserve the cancelled agreement they replace.
+        if not self.is_new() or self.amended_from or not self.company:
+            return
+        defaults = frappe.db.get_value(
+            'PZ Contract Defaults', self.company, list(COMPANY_DEFAULT_FIELDS), as_dict=True
+        )
+        if not defaults:
+            return
+        for fieldname in COMPANY_DEFAULT_FIELDS:
+            blank = self.get(fieldname) in (None, '') or (
+                fieldname == 'conversion_rate' and self.get(fieldname) == 0
+            )
+            configured_value = defaults.get(fieldname)
+            if fieldname == 'conversion_rate' and configured_value == 0:
+                configured_value = None
+            if blank and configured_value not in (None, ''):
+                self.set(fieldname, configured_value)
 
     def validate(self):
         old = self.get_doc_before_save()
