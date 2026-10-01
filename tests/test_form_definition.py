@@ -118,6 +118,10 @@ class TestContractFormDefinition(unittest.TestCase):
 
     def test_company_change_resets_company_values_without_erasing_customer_deal(self):
         self.assertIn('const clear = Object.fromEntries([...companyDefaultFields, "seller_address_display"].map((fieldname) => [fieldname, null]));', self.javascript)
+        self.assertIn('const initialZeroGrace = fieldname === "collection_grace"', self.javascript)
+        self.assertIn('frm._pzCollectionGraceTouchedCompany !== company', self.javascript)
+        self.assertIn('frm._pzCollectionGraceTouchedCompany = frm.doc.company;', self.javascript)
+        self.assertIn('frm._pzCollectionGraceTouchedCompany = null;', self.javascript)
         self.assertIn('if (previousCompany && previousCompany !== currentCompany) clearCompanySpecificValues(frm);', self.javascript)
         self.assertNotIn('"customer_address"', js_string_array(
             self.javascript,

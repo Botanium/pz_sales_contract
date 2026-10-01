@@ -115,7 +115,14 @@ class TestPZSalesContract(IntegrationTestCase):
             'bank_receiving_account': self.synthetic_alternate_bank_account(),
             'beneficiary': 'SYNTHETIC DEAL-SPECIFIC BENEFICIARY',
         }
-        doc = contract(customer=customer, **(blank_fields | overrides))
+        doc = contract(customer=customer, insert=False, **(blank_fields | overrides))
+        doc.before_validate()
+        self.assertEqual(doc.currency, settings.currency)
+        self.assertEqual(doc.conversion_rate, settings.conversion_rate)
+        self.assertEqual(doc.selling_price_list, settings.selling_price_list)
+        self.assertTrue(frappe.get_doc('Price List', doc.selling_price_list).enabled)
+        self.assertTrue(frappe.get_doc('Price List', doc.selling_price_list).selling)
+        doc.insert()
         for fieldname in COMPANY_DEFAULT_FIELDS:
             expected = overrides.get(fieldname, settings.get(fieldname))
             if expected is not None:

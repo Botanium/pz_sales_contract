@@ -198,12 +198,24 @@ function loadCompanyDefaults(frm, expectedCompany, requestId) {
       const configured = response.message || {};
       const values = {};
       for (const fieldname of companyDefaultFields) {
-        if (isMissingValue(fieldname, frm.doc[fieldname]) && !isMissingValue(fieldname, configured[fieldname])) {
+        const initialZeroGrace = fieldname === "collection_grace"
+          && Number(frm.doc[fieldname]) === 0
+          && frm._pzCollectionGraceTouchedCompany !== company;
+        if ((isMissingValue(fieldname, frm.doc[fieldname]) || initialZeroGrace)
+          && !isMissingValue(fieldname, configured[fieldname])) {
           values[fieldname] = configured[fieldname];
         }
       }
-      if (Object.keys(values).length) frm.set_value(values);
-      renderDailyChecklist(frm);
+      if (Object.keys(values).length) {
+        frm._pzApplyingCompanyDefaults = true;
+        Promise.resolve(frm.set_value(values)).then(() => {
+          frm._pzApplyingCompanyDefaults = false;
+          renderDailyChecklist(frm);
+        }, () => {
+          frm._pzApplyingCompanyDefaults = false;
+          renderDailyChecklist(frm);
+        });
+      } else renderDailyChecklist(frm);
     },
     error() {
       if (frm.doc.company !== company || requestId !== frm._pzCompanyDefaultsRequestId) return;
@@ -225,10 +237,16 @@ function clearCompanySpecificValues(frm) {
   frm._pzCompanyDefaultsRequestedFor = null;
   const company = frm.doc.company;
   const clear = Object.fromEntries([...companyDefaultFields, "seller_address_display"].map((fieldname) => [fieldname, null]));
+  frm._pzCollectionGraceTouchedCompany = null;
+  frm._pzClearingCompanySpecificValues = true;
   Promise.resolve(frm.set_value(clear)).then(() => {
+    frm._pzClearingCompanySpecificValues = false;
     if (frm.doc.company === company && requestId === frm._pzCompanyDefaultsRequestId) {
       loadCompanyDefaults(frm, company, requestId);
     }
+    renderDailyChecklist(frm);
+  }, () => {
+    frm._pzClearingCompanySpecificValues = false;
     renderDailyChecklist(frm);
   });
 }
@@ -278,6 +296,12 @@ frappe.ui.form.on("PZ Sales Contract", {
     frm._pzLastSelectedCompany = currentCompany;
     if (previousCompany && previousCompany !== currentCompany) clearCompanySpecificValues(frm);
     else loadCompanyDefaults(frm, currentCompany);
+    renderDailyChecklist(frm);
+  },
+  collection_grace(frm) {
+    if (!frm._pzApplyingCompanyDefaults && !frm._pzClearingCompanySpecificValues && frm.doc.company) {
+      frm._pzCollectionGraceTouchedCompany = frm.doc.company;
+    }
     renderDailyChecklist(frm);
   },
   items_add(frm) { renderDailyChecklist(frm); },

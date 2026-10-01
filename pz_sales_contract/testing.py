@@ -89,7 +89,7 @@ def new_customer():
     return customer,address,contact
 
 
-def contract(customer=None, submit=False, **values):
+def contract(customer=None, submit=False, insert=True, **values):
     if not customer:
         customer,address,contact=new_customer()
     else:
@@ -112,7 +112,9 @@ def contract(customer=None, submit=False, **values):
         bank_receiving_account='PZ Synthetic Bank - PZT',cash_receiving_account='PZ Synthetic Cash - PZT',
         beneficiary='SYNTHETIC — DO NOT PAY',bank_branch='SYNTHETIC BANK — NO REAL ACCOUNT',account_iban='USD / SYNTHETIC-NOT-AN-ACCOUNT',swift_reference='SYNTHETIC ONLY')
     d.update(values)
-    doc=frappe.get_doc(d).insert()
+    doc=frappe.get_doc(d)
+    if insert:
+        doc.insert()
     if submit:
         doc.submit()
     return doc
