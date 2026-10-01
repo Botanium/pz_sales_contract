@@ -29,12 +29,15 @@ class PZSalesContract(Document):
         # the cancelled contract from current user defaults.
         initially_blank = {}
         initially_blank_currency_dependent = set()
+        initially_blank_collection_grace = getattr(self, '_pz_initially_blank_collection_grace', False)
         if self.is_new() and self.amended_from:
             for fieldname in COMPANY_DEFAULT_FIELDS:
                 value = self.get(fieldname)
                 if value in (None, '') or (fieldname == 'conversion_rate' and value == 0):
                     initially_blank[fieldname] = value
         elif self.is_new():
+            if self.get('collection_grace') in (None, ''):
+                initially_blank_collection_grace = True
             for fieldname in CURRENCY_DEPENDENT_DEFAULT_FIELDS:
                 value = self.get(fieldname)
                 if value in (None, '') or (fieldname == 'conversion_rate' and value == 0):
@@ -42,6 +45,7 @@ class PZSalesContract(Document):
 
         super()._set_defaults()
         self._pz_initially_blank_currency_dependent_defaults = initially_blank_currency_dependent
+        self._pz_initially_blank_collection_grace = initially_blank_collection_grace
 
         if self.amended_from:
             for fieldname, value in initially_blank.items():
@@ -161,6 +165,9 @@ class PZSalesContract(Document):
                     continue
             blank = self.get(fieldname) in (None, '') or (
                 fieldname == 'conversion_rate' and self.get(fieldname) == 0
+            ) or (
+                fieldname == 'collection_grace' and self.get(fieldname) == 0
+                and getattr(self, '_pz_initially_blank_collection_grace', False)
             )
             configured_value = defaults.get(fieldname)
             if fieldname == 'conversion_rate' and configured_value == 0:

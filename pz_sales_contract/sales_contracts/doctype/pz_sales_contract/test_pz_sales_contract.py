@@ -154,6 +154,9 @@ class TestPZSalesContract(IntegrationTestCase):
                     actual, expected = get_timedelta(actual), get_timedelta(expected)
                 self.assertEqual(actual, expected, fieldname)
 
+        explicit_zero_grace = contract(customer=customer, **(blank_fields | {'collection_grace': 0}))
+        self.assertEqual(explicit_zero_grace.collection_grace, 0)
+
         # Explicit currency-incompatible price lists/accounts are never
         # overwritten or accompanied by a partially copied profile bundle.
         explicit_bad_list = contract(customer=customer, insert=False, **(blank_fields | {

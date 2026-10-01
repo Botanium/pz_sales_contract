@@ -123,6 +123,13 @@ class TestContractFormDefinition(unittest.TestCase):
         self.assertIn('for fieldname, value in initially_blank.items():', set_defaults.group(1))
         self.assertIn('self.set(fieldname, value)', set_defaults.group(1))
         self.assertIn('initially_blank_currency_dependent.add(fieldname)', set_defaults.group(1))
+        self.assertIn("self.get('collection_grace') in (None, '')", set_defaults.group(1))
+        self.assertLess(
+            set_defaults.group(1).index("self.get('collection_grace') in (None, '')"),
+            set_defaults.group(1).index('super()._set_defaults()'),
+        )
+        self.assertIn("fieldname == 'collection_grace' and self.get(fieldname) == 0", self.controller)
+        self.assertIn("getattr(self, '_pz_initially_blank_collection_grace', False)", self.controller)
         self.assertLess(
             set_defaults.group(1).index('initially_blank_currency_dependent.add(fieldname)'),
             set_defaults.group(1).index('super()._set_defaults()'),
