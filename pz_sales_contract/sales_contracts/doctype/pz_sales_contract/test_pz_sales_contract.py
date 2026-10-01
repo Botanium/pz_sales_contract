@@ -448,10 +448,15 @@ class TestPZSalesContract(IntegrationTestCase):
 
     def test_cancel_amend_and_reservation_retained(self):
         self.clear_synthetic_company_defaults()
-        settings = self.synthetic_company_defaults(seller_signatory='Synthetic approved signer at creation').insert()
-        d=contract(submit=True, seller_signatory=None)
+        settings = self.synthetic_company_defaults(
+            seller_signatory='Synthetic approved signer at creation',
+            cash_receiving_account=None,
+        ).insert()
+        d=contract(submit=True, seller_signatory=None, cash_receiving_account=None)
         self.assertEqual(d.seller_signatory, 'Synthetic approved signer at creation')
+        self.assertIsNone(d.cash_receiving_account)
         settings.seller_signatory = 'Synthetic later default; never rewrite an agreed contract'
+        settings.cash_receiving_account = 'PZ Synthetic Cash - PZT'
         settings.save()
         family=d.first_family
         d.cancel()
@@ -470,6 +475,7 @@ class TestPZSalesContract(IntegrationTestCase):
         frappe.set_user('Administrator')
         amendment.insert()
         self.assertEqual(amendment.seller_signatory, 'Synthetic approved signer at creation')
+        self.assertIsNone(amendment.cash_receiving_account)
         self.assertEqual(amendment.first_family,family)
         self.assertTrue(payment_status(amendment).payment_draft)
         amendment.submit()

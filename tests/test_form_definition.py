@@ -123,6 +123,10 @@ class TestContractFormDefinition(unittest.TestCase):
         self.assertIn("'PZ Contract Defaults'", self.controller)
 
     def test_company_change_resets_company_values_without_erasing_customer_deal(self):
+        self.assertIn('if (!company || !frm.is_new() || frm.doc.amended_from) return;', self.javascript)
+        self.assertIn('if (!frm.is_new() || frm.doc.amended_from) return;', self.javascript)
+        self.assertIn('if (frm.is_new() && !frm.doc.amended_from && frm.doc.company) loadCompanyDefaults(frm);', self.javascript)
+        self.assertIn('if (frm.is_new() && !frm.doc.amended_from && frm.doc.company && frappe.user.has_role("System Manager"))', self.javascript)
         self.assertIn('const clear = Object.fromEntries([...companyDefaultFields, "seller_address_display"].map((fieldname) => [fieldname, null]));', self.javascript)
         self.assertIn('const initialZeroGrace = fieldname === "collection_grace"', self.javascript)
         self.assertIn('frm._pzCollectionGraceTouchedCompany !== company', self.javascript)

@@ -181,7 +181,7 @@ function renderDailyChecklist(frm) {
 
 function loadCompanyDefaults(frm, expectedCompany, requestId) {
   const company = expectedCompany || frm.doc.company;
-  if (!company || !frm.is_new()) return;
+  if (!company || !frm.is_new() || frm.doc.amended_from) return;
   if (requestId === undefined) {
     if (frm._pzCompanyDefaultsLoadedFor === company || frm._pzCompanyDefaultsRequestedFor === company) return;
     requestId = (frm._pzCompanyDefaultsRequestId || 0) + 1;
@@ -230,7 +230,7 @@ function loadCompanyDefaults(frm, expectedCompany, requestId) {
 }
 
 function clearCompanySpecificValues(frm) {
-  if (!frm.is_new()) return;
+  if (!frm.is_new() || frm.doc.amended_from) return;
   const requestId = (frm._pzCompanyDefaultsRequestId || 0) + 1;
   frm._pzCompanyDefaultsRequestId = requestId;
   frm._pzCompanyDefaultsLoadedFor = null;
@@ -273,8 +273,8 @@ frappe.ui.form.on("PZ Sales Contract", {
   refresh(frm) {
     frm.set_intro("The first contract family saved using this app carries DRAFT until the full 30% advance has qualifying bank reconciliation or agreed cash receipt evidence. Finance can register verified prior contracts through PZ Customer History. ERP submission is separate. Save before printing.");
     renderDailyChecklist(frm);
-    if (frm.is_new() && frm.doc.company) loadCompanyDefaults(frm);
-    if (frm.is_new() && frm.doc.company && frappe.user.has_role("System Manager")) {
+    if (frm.is_new() && !frm.doc.amended_from && frm.doc.company) loadCompanyDefaults(frm);
+    if (frm.is_new() && !frm.doc.amended_from && frm.doc.company && frappe.user.has_role("System Manager")) {
       frm.add_custom_button("Company Contract Defaults", () => {
         frappe.new_doc("PZ Contract Defaults", { company: frm.doc.company });
       }, __("Setup"));
