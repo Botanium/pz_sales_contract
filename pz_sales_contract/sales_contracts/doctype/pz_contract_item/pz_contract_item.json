@@ -1,0 +1,102 @@
+{
+  "doctype": "DocType",
+  "name": "PZ Contract Item",
+  "module": "Sales Contracts",
+  "custom": 0,
+  "istable": 1,
+  "engine": "InnoDB",
+  "field_order": [
+    "item_code",
+    "item_name",
+    "description",
+    "grade",
+    "packaging",
+    "qty",
+    "uom",
+    "conversion_factor",
+    "rate",
+    "amount",
+    "specification_reference"
+  ],
+  "fields": [
+    {
+      "fieldname": "item_code",
+      "label": "Item",
+      "fieldtype": "Link",
+      "options": "Item",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "item_name",
+      "label": "Item name",
+      "fieldtype": "Data",
+      "read_only": 1
+    },
+    {
+      "fieldname": "description",
+      "label": "ERP description",
+      "fieldtype": "Small Text",
+      "read_only": 1
+    },
+    {
+      "fieldname": "grade",
+      "label": "Grade",
+      "fieldtype": "Data",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "packaging",
+      "label": "Packaging",
+      "fieldtype": "Data",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "qty",
+      "label": "Quantity",
+      "fieldtype": "Float",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "uom",
+      "label": "UOM",
+      "fieldtype": "Link",
+      "options": "UOM",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "conversion_factor",
+      "label": "Stock UOM factor",
+      "fieldtype": "Float",
+      "read_only": 1
+    },
+    {
+      "fieldname": "rate",
+      "label": "Rate",
+      "fieldtype": "Currency",
+      "options": "parent.currency",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "amount",
+      "label": "Amount",
+      "fieldtype": "Currency",
+      "options": "parent.currency",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "specification_reference",
+      "label": "Certificate / agreed specification reference",
+      "fieldtype": "Data",
+      "reqd": 1
+    }
+  ],
+  "permissions": [],
+  "track_changes": 1
+}

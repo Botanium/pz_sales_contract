@@ -1,0 +1,18 @@
+[build-system]
+requires = ["flit_core>=3.4,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "pz_sales_contract"
+version = "0.1.0"
+description = "Petrol Zone bitumen sales contracts for ERPNext v16"
+authors = [{name = "Petrol Zone"}]
+requires-python = ">=3.14"
+license = "GPL-3.0-or-later"
+
+[tool.bench.frappe-dependencies]
+frappe = ">=16.0.0,<17.0.0"
+erpnext = ">=16.0.0,<17.0.0"
+
+[tool.flit.module]
+name = "pz_sales_contract"

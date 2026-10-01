@@ -1,0 +1,106 @@
+{
+  "doctype": "DocType",
+  "name": "PZ Customer History",
+  "module": "Sales Contracts",
+  "custom": 0,
+  "engine": "InnoDB",
+  "field_order": [
+    "customer",
+    "company",
+    "prior_contract_evidence",
+    "sales_order",
+    "currency",
+    "advance_required",
+    "bank_receiving_account",
+    "cash_receiving_account",
+    "validated_evidence"
+  ],
+  "fields": [
+    {
+      "fieldname": "customer",
+      "label": "Established Customer",
+      "fieldtype": "Link",
+      "options": "Customer",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "company",
+      "label": "Historical seller Company",
+      "fieldtype": "Link",
+      "options": "Company",
+      "reqd": 1
+    },
+    {
+      "fieldname": "prior_contract_evidence",
+      "label": "Prior signed contract / approval reference and finance review evidence",
+      "fieldtype": "Small Text",
+      "reqd": 1
+    },
+    {
+      "fieldname": "sales_order",
+      "label": "Prior submitted ERP Sales Order",
+      "fieldtype": "Link",
+      "options": "Sales Order",
+      "reqd": 1
+    },
+    {
+      "fieldname": "currency",
+      "label": "Historical contract currency",
+      "fieldtype": "Link",
+      "options": "Currency",
+      "read_only": 1
+    },
+    {
+      "fieldname": "advance_required",
+      "label": "Historical advance required (30% of prior order)",
+      "fieldtype": "Currency",
+      "options": "currency",
+      "read_only": 1
+    },
+    {
+      "fieldname": "bank_receiving_account",
+      "label": "Historical nominated Bank account",
+      "fieldtype": "Link",
+      "options": "Account",
+      "reqd": 1
+    },
+    {
+      "fieldname": "cash_receiving_account",
+      "label": "Historical agreed Cash account (optional)",
+      "fieldtype": "Link",
+      "options": "Account"
+    },
+    {
+      "fieldname": "validated_evidence",
+      "label": "Receipt evidence at finance submission (live status is rechecked)",
+      "fieldtype": "Code",
+      "options": "JSON",
+      "read_only": 1
+    }
+  ],
+  "permissions": [
+    {
+      "role": "Accounts Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "submit": 1,
+      "cancel": 1,
+      "print": 0
+    },
+    {
+      "role": "System Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "submit": 1,
+      "cancel": 1,
+      "print": 0
+    }
+  ],
+  "track_changes": 1,
+  "is_submittable": 1,
+  "autoname": "format:PZ-HISTORY-{YYYY}-{#####}",
+  "allow_rename": 0
+}

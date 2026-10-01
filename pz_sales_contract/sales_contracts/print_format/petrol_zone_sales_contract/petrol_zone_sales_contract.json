@@ -1,0 +1,15 @@
+{
+  "doctype": "Print Format",
+  "name": "Petrol Zone Sales Contract",
+  "doc_type": "PZ Sales Contract",
+  "module": "Sales Contracts",
+  "standard": "Yes",
+  "custom_format": 1,
+  "print_format_type": "Jinja",
+  "disabled": 0,
+  "html": "{% include \"pz_sales_contract/templates/contract.html\" %}",
+  "margin_top": 12,
+  "margin_bottom": 12,
+  "margin_left": 14,
+  "margin_right": 14
+}

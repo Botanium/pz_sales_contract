@@ -1,0 +1,38 @@
+{
+  "doctype": "DocType",
+  "name": "PZ Contract Registry",
+  "module": "Sales Contracts",
+  "custom": 0,
+  "istable": 0,
+  "engine": "InnoDB",
+  "field_order": [
+    "customer",
+    "first_family",
+    "established_history"
+  ],
+  "fields": [
+    {
+      "fieldname": "customer",
+      "label": "Customer",
+      "fieldtype": "Link",
+      "options": "Customer",
+      "unique": 1,
+      "reqd": 1
+    },
+    {
+      "fieldname": "first_family",
+      "label": "First contract family",
+      "fieldtype": "Data",
+      "reqd": 0
+    },
+    {
+      "fieldname": "established_history",
+      "label": "Validated historical customer designation",
+      "fieldtype": "Link",
+      "options": "PZ Customer History"
+    }
+  ],
+  "permissions": [],
+  "track_changes": 1,
+  "autoname": "hash"
+}

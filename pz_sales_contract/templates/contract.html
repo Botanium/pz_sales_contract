@@ -1,0 +1,93 @@
+{% macro header(section) %}
+<div class="masthead"><img src="{{ logo }}"><div><strong>PETROL ZONE</strong><span>SALES CONTRACT · {{ section }}</span></div><div class="reference">{{ doc.name|e }}<br>{{ doc.transaction_date|e }}</div></div>
+{% if doc.docstatus == 2 %}<div class="draft cancelled">CANCELLED CONTRACT</div>{% elif state.payment_draft %}<div class="draft">DRAFT — FIRST ADVANCE NOT CONFIRMED</div>{% endif %}
+<div class="status">{{ "Established customer · finance history verified" if state.established_history else ("First contract family" if state.first_contract else "Returning customer · later contract") }} · ERP document: {{ erp_status|e }} · Currency: {{ doc.currency|e }} · 30% advance: {{ money(doc.advance_required, state.currency_precision) }} · Confirmed receipt allocation: {{ money(state.confirmed, state.currency_precision) }}</div>
+{% endmacro %}
+{% macro money(n, precision=doc.precision('grand_total')) %}{{ format_money(n or 0, precision=precision)|e }}{% endmacro %}
+<style>
+@page { size:A4; margin:16mm 14mm; }
+.print-format { font-family:Arial,sans-serif; color:#222; font-size:9.5pt; padding:0!important; margin-top:18mm; margin-bottom:15mm; margin-left:14mm; margin-right:14mm; header-spacing:4; }
+.contract { font-family:Arial,sans-serif; color:#222; font-size:9.5pt; line-height:1.32; }
+.contract .page { page-break-before:always; }
+.contract .page:first-child { page-break-before:auto; }
+.contract .masthead { display:table; width:100%; border-bottom:3px solid #efa90a; padding-bottom:6px; margin-bottom:8px; }
+.contract .masthead img { width:72px; height:51px; display:table-cell; vertical-align:middle; }
+.contract .masthead > div { display:table-cell; vertical-align:middle; padding-left:14px; }
+.contract .masthead strong { font-size:18pt; color:#151515; }
+.contract .masthead span { display:block; font-size:8pt; letter-spacing:1px; margin-top:3px; }
+.contract .masthead .reference { text-align:right; font-size:8pt; width:28%; }
+.contract .draft { border:2px solid #d58c00; background:#fff0cd; color:#815200; font-size:15pt; font-weight:bold; text-align:center; padding:7px; margin:7px 0; }
+.contract .cancelled { border-color:#aa3535; color:#aa3535; }
+.contract .status { font-size:7.5pt; color:#555; padding-bottom:7px; border-bottom:1px solid #ddd; margin-bottom:10px; }
+.contract h1 { font-size:18pt; margin:10px 0 4px; }
+.contract h2 { font-size:13pt; margin:12px 0 7px; }
+.contract h3 { font-size:10.5pt; margin:10px 0 6px; }
+.contract p { font-size:9.5pt!important; line-height:1.32!important; margin:0 0 8px!important; }
+.contract .payment-line { font-weight:bold; color:#815200; margin-bottom:12px!important; }
+.contract table { width:100%; border-collapse:collapse; margin-bottom:10px; table-layout:fixed; }
+.contract thead { display:table-header-group; }
+.contract tr { page-break-inside:avoid; }
+.contract th { background:#262626!important; color:#ffc044!important; padding:6px!important; font-size:8.5pt; text-align:left; }
+.contract td { border-bottom:1px solid #ddd; padding:6px!important; vertical-align:top; word-wrap:break-word; font-size:9pt; }
+.contract .details td { background:#f4f4f4; border:4px solid white; padding:8px!important; }
+.contract .details strong { display:block; margin-bottom:4px; }
+.contract .num { text-align:right; }
+.contract .totals { margin-left:45%; width:55%; }
+.contract .totals .total td { background:#fff0cd; font-weight:bold; border-top:2px solid #efa90a; }
+.contract .terms p { font-size:9pt!important; line-height:1.20!important; margin:0 0 8px!important; }
+.contract .schedule .schedule-label { width:31%; color:#555; font-size:8.5pt; font-weight:normal; }
+.contract .schedule td { padding:5px!important; font-size:8.8pt; }
+.contract .signature { height:90px; border-bottom:1px solid #777; margin:20px 0 9px; }
+.contract .quiet, .contract p.quiet { font-size:8pt!important; color:#555; }
+.contract .keep { page-break-inside:avoid; }
+.pz-running { font-family:Arial,sans-serif; font-size:8pt; color:#555; border-bottom:1px solid #efa90a; padding:3px 0; }
+.pz-running strong { color:#815200; }
+.pz-footer { font-family:Arial,sans-serif; font-size:8pt; color:#555; border-top:1px solid #efa90a; padding:4px 0; }
+</style>
+<div id="header-html" class="visible-pdf"><div class="pz-running">PETROL ZONE · {{ doc.name|e }}{% if doc.docstatus==2 %} · <strong>CANCELLED</strong>{% elif state.payment_draft %} · <strong>DRAFT — FIRST ADVANCE NOT CONFIRMED</strong>{% endif %}</div></div>
+<div id="footer-html" class="visible-pdf"><div class="pz-footer">{{ doc.customer_name|e }} · {{ doc.currency|e }} · {{ doc.name|e }}</div></div>
+<div class="contract">
+<section class="page">
+{{ header('Commercial terms') }}
+<h1>Petrol Zone Sales Contract</h1><p class="payment-line">PAYMENT REQUIRED WITHIN 24 BUSINESS HOURS</p>
+<table class="details"><tr><td><strong>Seller</strong>{{ doc.company|e }}<br>{{ doc.seller_address_display|e }}<br>info@petrol-zone.com<br>00964 770 000 3737 · 00971 505 65 1305</td><td><strong>Buyer</strong>{{ doc.customer_name|e }}<br>Registration / tax / ID: {{ (doc.customer_tax_id or 'Not recorded in Customer')|e }}<br>{{ doc.address_display|e }}<br>{{ doc.contact_display|e }}<br>Representative title: {{ doc.buyer_position|e }}</td></tr></table>
+<p>Petrol Zone Company (the Seller) agrees to sell, and the Customer named above (the Buyer) agrees to purchase the goods below on the completed commercial terms and conditions of this Contract.</p>
+<h2>Products and Price</h2>
+<table><thead><tr><th style="width:5%">No.</th><th style="width:29%">Product / packaging</th><th style="width:12%">Grade</th><th style="width:12%">Qty</th><th style="width:9%">UOM</th><th style="width:15%">Rate</th><th style="width:18%">Amount</th></tr></thead><tbody>
+{% for row in doc.items %}<tr><td>{{ loop.index }}</td><td>{{ row.item_name|e }}<br><span class="quiet">{{ row.item_code|e }} · {{ row.packaging|e }}</span></td><td>{{ row.grade|e }}</td><td class="num">{{ row.qty|e }}</td><td>{{ row.uom|e }}</td><td class="num">{{ money(row.rate, row.precision('rate')) }}</td><td class="num">{{ money(row.amount, row.precision('amount')) }}</td></tr>{% endfor %}
+</tbody></table>
+<table class="totals"><tr><td>Subtotal</td><td class="num">{{ money(doc.subtotal, doc.precision('subtotal')) }}</td></tr><tr><td>Discount</td><td class="num">{{ money(doc.discount_amount, doc.precision('discount_amount')) }}</td></tr><tr><td>Taxes / charges</td><td class="num">{{ money(doc.tax_total, doc.precision('tax_total')) }}</td></tr><tr class="total"><td>Total · {{ doc.currency|e }}</td><td class="num">{{ money(doc.grand_total, doc.precision('grand_total')) }}</td></tr><tr><td>30% advance</td><td class="num">{{ money(doc.advance_required, doc.precision('advance_required')) }}</td></tr><tr><td>70% balance</td><td class="num">{{ money(doc.balance_required, doc.precision('balance_required')) }}</td></tr></table>
+<p><strong>Amount in words:</strong> {{ doc.in_words|e }}</p>
+<p class="quiet">Rate is per stated unit of measure. Line amount = Qty × Rate. Total = Subtotal − Discount + Taxes / charges. Quantities in different units are not combined.</p>
+{% if doc.taxes %}<h3>Identified taxes and charges</h3><table><thead><tr><th>Description</th><th>Basis</th><th>Rate / amount</th></tr></thead><tbody>{% for t in doc.taxes %}<tr><td>{{ t.description|e }}</td><td>{{ t.charge_type|e }}</td><td>{{ (t.rate or 0)|e }}% / {{ money(t.tax_amount_after_discount_amount, t.precision('tax_amount_after_discount_amount')) }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+<p><strong>Incoterm:</strong> {{ doc.incoterm|e }} · <strong>Named place:</strong> {{ doc.named_place|e }}</p>
+</section>
+<section class="page">
+{{ header('Commercial Schedule') }}<h2>Commercial Schedule</h2>
+<table class="schedule"><tbody>
+{% for label, key in [('Incoterm named place','named_place'),('Delivery and risk arrangement','delivery_arrangement'),('Transport responsibility','transport_responsibility'),('Insurance responsibility','insurance_responsibility'),('Measurement / tolerance / adjustments','measurement_basis'),('Business time zone','timezone'),('Business days','business_days'),('Opening time','opens_at'),('Closing time','closes_at'),('Written notice channel','notice_channel'),('Readiness and pickup window','collection_arrangement'),('Delay charge bases','delay_charges'),('Penalty basis and cap','penalty_basis_cap'),('Default cure period','cure_period'),('Latent defect notification period','latent_claim_period'),('Force majeure termination threshold','force_majeure_threshold'),('Governing law','governing_law'),('Courts','courts')] %}<tr><td class="schedule-label">{{ label }}</td><td>{{ doc.get(key)|e }}</td></tr>{% endfor %}
+<tr><td class="schedule-label">Agreed holiday calendar</td><td>{{ holiday.name|e }} · Valid {{ holiday.from_date|e }} to {{ holiday.to_date|e }}<br>{% for h in holiday.holidays|sort(attribute='holiday_date') %}{{ h.holiday_date|e }}: {{ h.description|striptags|e }}{% if not loop.last %}; {% endif %}{% else %}No excluded holiday dates in this agreed calendar.{% endfor %}</td></tr>
+<tr><td class="schedule-label">Collection grace</td><td>{{ doc.collection_grace|e }} {{ doc.grace_unit|e }}</td></tr>
+</tbody></table>
+<p class="quiet">The 24-business-hour period accumulates open hours in this agreed calendar. Receipt outside business hours starts at the next opening time. The collection grace period does not extend the payment deadline.</p>
+</section>
+{% for start, end in [(0,8),(8,15)] %}
+<section class="page terms">{{ header('Contract terms') }}<h2>Contract Terms</h2>
+{% for clause in clauses[start:end] %}<p>{{ clause|e }}</p>{% endfor %}
+</section>{% endfor %}
+<section class="page">
+{{ header('Agreed specifications') }}<h2>Appendix A · Agreed Product Specification</h2>
+<p>Complete the agreed requirements for the ordered product. Attach signed continuation sheets or the agreed certificate where needed.</p>
+{% for item in spec_items %}<h3>{{ item.item_name|e }} · {{ item.grade|e }}</h3><p class="quiet">Certificate or specification reference: {{ item.specification_reference|e }}</p><table><thead><tr><th>Property</th><th style="width:12%">Unit</th><th>Test Method</th><th>Requirement</th></tr></thead><tbody>{% for row in doc.specifications if row.item_code==item.item_code %}<tr><td>{{ row.property|e }}</td><td>{{ (row.unit or '')|e }}</td><td>{{ row.test_method|e }}</td><td>{{ row.requirement|e }}</td></tr>{% endfor %}</tbody></table>{% endfor %}
+<h2>Payment Instructions</h2><table class="schedule"><thead><tr><th style="width:31%">Payment detail</th><th>Agreed instructions</th></tr></thead><tbody>{% for label,key in [('Nominated ERP Bank account','bank_receiving_account'),('Agreed ERP Cash account','cash_receiving_account'),('Account beneficiary','beneficiary'),('Bank / branch','bank_branch'),('Currency / account / IBAN','account_iban'),('SWIFT / payment reference','swift_reference')] %}<tr><td>{{ label }}</td><td>{{ (doc.get(key) or 'Cash not agreed')|e }}</td></tr>{% endfor %}</tbody></table>
+<p>Confirm payment instructions with an independently known Petrol Zone contact before transferring funds or accepting any change of bank details.</p>
+</section>
+<section class="page">
+{{ header('Approvals and signatures') }}<h2>Order and Collection Record</h2>
+<table><thead><tr><th>Event</th><th>Recorded date / time</th></tr></thead><tbody>{% for label,key in [('Order Approval received','approval_received'),('30% advance deadline','advance_deadline'),('Ready Notice received','ready_received'),('70% balance deadline','balance_deadline'),('Collection deadline','collection_deadline')] %}<tr><td>{{ label }}</td><td>{{ (doc.get(key) or 'Not yet recorded')|e }}</td></tr>{% endfor %}</tbody></table>
+<p class="quiet">Written approval / acceptance evidence: {{ (doc.approval_evidence or 'Not yet recorded')|e }}<br>Ready Notice delivery evidence: {{ (doc.ready_evidence or 'Not yet recorded')|e }}</p>
+<h2>Signatures</h2><p>By signing, each party confirms its authority and accepts the completed commercial terms, 30% advance, 70% balance, 24-business-hour deadlines, collection charges and force majeure provisions.</p>
+<table class="details keep"><tr><td><strong>For Seller</strong>{{ doc.company|e }}<br><br>Authorised signatory: {{ doc.seller_signatory|e }}<br>Position: {{ doc.seller_position|e }}<div class="signature"></div>Signature / stamp<br><br>Date: __________________</td><td><strong>For Buyer</strong>{{ doc.customer_name|e }}<br><br>Authorised signatory: {{ doc.contact_display|e }}<br>Position: {{ doc.buyer_position|e }}<div class="signature"></div>Signature / stamp<br><br>Date: __________________</td></tr></table>
+<p class="quiet">This printout records ERP receipt and bank reconciliation evidence at the time of generation. The marker is not cryptographic proof and does not prevent alteration of a downloaded PDF.</p>
+</section>
+</div>

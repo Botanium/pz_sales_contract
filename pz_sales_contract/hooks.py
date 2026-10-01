@@ -1,0 +1,12 @@
+app_name = "pz_sales_contract"
+app_title = "Petrol Zone Sales Contracts"
+app_publisher = "Petrol Zone"
+app_description = "Branded bitumen contracts with a server-enforced first-contract advance marker"
+app_email = "info@petrol-zone.com"
+app_license = "GPL-3.0-or-later"
+required_apps = ["erpnext"]
+pdf_body_html = "pz_sales_contract.printing.pdf_body_html"
+before_request = ["pz_sales_contract.printing.guard_renderer"]
+doc_events = {"Print Format": {"validate": "pz_sales_contract.printing.validate_format"}}
+pdf_header_html = "pz_sales_contract.printing.pdf_header_html"
+pdf_footer_html = "pz_sales_contract.printing.pdf_header_html"
