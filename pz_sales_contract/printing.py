@@ -12,6 +12,8 @@ from pz_sales_contract.payments import payment_status
 def validate_format(doc, method=None):
     if doc.doc_type == 'PZ Sales Contract' and doc.get('print_format_builder_beta'):
         frappe.throw('Beta print builders are unsupported for PZ contracts; use the enforced branded format')
+    if doc.doc_type == 'PZ Sales Contract' and 'chrome' in str(doc.get('pdf_generator') or '').lower():
+        frappe.throw('Chrome PDF rendering is unsupported for PZ contracts; use native wkhtmltopdf printing')
 
 
 def guard_renderer():
@@ -33,15 +35,25 @@ def guard_renderer():
         except (ValueError, TypeError):
             pass
     if 'PZ Sales Contract' in doctypes:
-        command = values.get('cmd') or getattr(getattr(frappe.local,'request',None),'path','')
-        if 'frappe.utils.weasyprint.' in command or 'chrome' in str(values.get('pdf_generator','')).lower():
+        path = getattr(getattr(frappe.local,'request',None),'path','') or ''
+        commands = [str(values.get('cmd') or ''),path]
+        weasyprint = any('frappe.utils.weasyprint.' in command or
+            'frappe.printing.doctype.print_format.print_format.download_pdf' in command
+            for command in commands)
+        # API v2 expands its DocType shortcut only after before_request hooks.
+        weasyprint = weasyprint or path.rstrip('/') == '/api/v2/method/Print Format/download_pdf'
+        if weasyprint or 'chrome' in str(values.get('pdf_generator','')).lower():
             frappe.throw('This renderer bypasses the enforced contract template; use native wkhtmltopdf printing')
         names = [values.get('format'),values.get('print_format')]
         if not any(names):
             names = [frappe.get_meta('PZ Sales Contract').default_print_format or 'Standard']
         for name in filter(None,names):
-            if frappe.db.get_value('Print Format',name,'print_format_builder_beta'):
+            settings = frappe.db.get_value('Print Format',name,
+                ['print_format_builder_beta','pdf_generator'],as_dict=True)
+            if settings and settings.print_format_builder_beta:
                 frappe.throw('Beta print builders are unsupported for PZ contracts; use the enforced branded format')
+            if settings and 'chrome' in str(settings.pdf_generator or '').lower():
+                frappe.throw('Chrome PDF rendering is unsupported for PZ contracts; use native wkhtmltopdf printing')
 
 
 def pdf_body_html(template, args, **kwargs):

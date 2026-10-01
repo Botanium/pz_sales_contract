@@ -16,7 +16,8 @@ class PZCustomerHistory(Document):
         if frappe.db.exists('PZ Sales Contract',{'sales_order':order.name}):
             frappe.throw('Historical order must predate this app contract workflow')
         self.currency = order.currency
-        quantum = Decimal(10) ** -(self.precision('advance_required') or 2)
+        precision = self.precision('advance_required')
+        quantum = Decimal(10) ** -(2 if precision is None else precision)
         self.advance_required = float((Decimal(str(order.grand_total))*Decimal('.30')).quantize(quantum,rounding=ROUND_HALF_UP))
         if self.advance_required <= 0:
             frappe.throw('Historical contract must have a positive required advance')

@@ -15,6 +15,7 @@ class PZSalesContract(Document):
         if self.amended_from:
             original = frappe.get_doc(self.doctype, self.amended_from)
             original.check_permission('read')
+            original.check_permission('amend')
             if original.docstatus != 2 or original.customer != self.customer or original.company != self.company:
                 frappe.throw('Amendments require a cancelled contract with the same customer and company')
             self.first_family = original.first_family
@@ -49,7 +50,9 @@ class PZSalesContract(Document):
         self.subtotal = order.total
         self.tax_total = order.total_taxes_and_charges
         self.grand_total = order.grand_total
-        precision = self.precision('advance_required') or 2
+        precision = self.precision('advance_required')
+        if precision is None:
+            precision = 2
         quantum = Decimal(10) ** -precision
         self.advance_required = float((Decimal(str(self.grand_total))*Decimal('.30')).quantize(quantum, rounding=ROUND_HALF_UP))
         self.balance_required = self.grand_total - self.advance_required
@@ -155,7 +158,7 @@ class PZSalesContract(Document):
                     'selling_price_list','customer_address','contact_person','incoterm']:
             order.set(key, self.get(key))
         order.order_type = 'Sales'
-        order.incoterm_place = self.named_place
+        order.named_place = self.named_place
         order.ignore_pricing_rule = 1
         order.disable_rounded_total = 1
         order.apply_discount_on = 'Net Total'

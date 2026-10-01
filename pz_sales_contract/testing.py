@@ -132,6 +132,25 @@ def receipt(doc, amount, cash=False, submit=True):
     return payment
 
 
+def refund(doc, amount, reference_doctype='Sales Order', reference_name=None, allocations=None):
+    payment=get_payment_entry(reference_doctype,reference_name or doc.sales_order,
+        party_amount=amount,bank_amount=amount,bank_account='PZ Synthetic Cash - PZT')
+    if payment.payment_type == 'Receive':
+        payment.payment_type='Pay'
+        payment.paid_from,payment.paid_to=payment.paid_to,payment.paid_from
+    payment.reference_no='SYNTHETIC-REFUND-'+frappe.generate_hash(length=6)
+    payment.reference_date=today()
+    payment.paid_amount=payment.received_amount=amount
+    if allocations is not None:
+        payment.set('references', [])
+        for doctype,name,allocated in allocations:
+            payment.append('references',dict(reference_doctype=doctype,reference_name=name,
+                allocated_amount=allocated))
+    payment.insert()
+    payment.submit()
+    return payment
+
+
 def reconcile(payment, bank_account, amount=None, submit=True):
     bt=frappe.get_doc(dict(doctype='Bank Transaction',date=today(),deposit=amount or payment.received_amount,
         withdrawal=0,currency='USD',bank_account=bank_account,company=COMPANY,

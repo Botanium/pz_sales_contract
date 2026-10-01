@@ -5,7 +5,7 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import today
 
 from pz_sales_contract.payments import payment_status, get_status
-from pz_sales_contract.testing import setup_fixtures, contract, receipt, reconcile, COMPANY
+from pz_sales_contract.testing import setup_fixtures, contract, receipt, refund, reconcile, COMPANY
 
 # Every needed record is created explicitly below. Do not recursively import
 # optional ERPNext fixtures (Payment Gateway belongs to another app in v16).
@@ -33,6 +33,7 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertEqual(d.taxes[0].tax_amount_after_discount_amount,90)
         d.submit()
         self.assertEqual(frappe.db.get_value('Sales Order',d.sales_order,'grand_total'),990)
+        self.assertEqual(frappe.db.get_value('Sales Order',d.sales_order,'named_place'),d.named_place)
         self.assertEqual(d.items[0].item_name,'Synthetic Bitumen')
         self.assertIn('Nine Hundred And Ninety',d.in_words)
         self.assertIn('Synthetic customer',d.address_display)
@@ -46,16 +47,171 @@ class TestPZSalesContract(IntegrationTestCase):
         with self.assertRaises(frappe.ValidationError):
             first.save()
 
+    def test_customer_refunds_reduce_current_advance(self):
+        d=contract(submit=True)
+        receipt(d,300,cash=True)
+        outgoing=refund(d,100)
+        self.assertEqual(frappe.db.get_value('Sales Order',d.sales_order,'advance_paid'),200)
+        self.assertEqual(payment_status(d).confirmed,200)
+        self.assertTrue(payment_status(d).payment_draft)
+        receipt(d,100,cash=True)
+        self.assertEqual(payment_status(d).confirmed,300)
+        self.assertFalse(payment_status(d).payment_draft)
+        self.assertIn(dict(payment_entry=outgoing.name,allocated=-100.0),payment_status(d).evidence)
+        outgoing.db_set('paid_to_account_currency','EUR')
+        self.assertTrue(payment_status(d).payment_draft)
+        outgoing.db_set('paid_to_account_currency','USD')
+        outgoing.cancel()
+        self.assertEqual(payment_status(d).confirmed,400)
+
+    def test_unallocated_and_mixed_customer_refunds_fail_closed(self):
+        first=contract(submit=True)
+        other=contract(customer=first.customer,submit=True)
+        receipt(first,300,cash=True)
+        ambiguous=refund(other,100,allocations=[('Sales Order',other.sales_order,50)])
+        self.assertEqual(ambiguous.unallocated_amount,50)
+        self.assertTrue(payment_status(first).payment_draft)
+        ambiguous.cancel()
+        unrelated=refund(other,100)
+        self.assertEqual(unrelated.unallocated_amount,0)
+        self.assertEqual(payment_status(first).confirmed,300)
+        mixed=refund(first,200,allocations=[('Sales Order',first.sales_order,100),
+            ('Sales Order',other.sales_order,100)])
+        self.assertEqual(mixed.unallocated_amount,0)
+        self.assertEqual(payment_status(first).confirmed,200)
+        self.assertTrue(payment_status(first).payment_draft)
+        receipt(first,100,cash=True)
+        self.assertFalse(payment_status(first).payment_draft)
+
+    def test_native_invoice_refund_reduces_advance_evidence(self):
+        from erpnext.selling.doctype.sales_order.sales_order import make_sales_invoice
+        d=contract(submit=True)
+        receipt(d,300,cash=True)
+        invoice=make_sales_invoice(d.sales_order)
+        invoice.set_advances()
+        for advance in invoice.advances:
+            advance.allocated_amount=advance.advance_amount
+        invoice.insert()
+        invoice.submit()
+        self.assertFalse(payment_status(d).payment_draft)
+        refund(d,300,reference_doctype='Sales Invoice',reference_name=invoice.name)
+        self.assertEqual(payment_status(d).confirmed,0)
+        self.assertTrue(payment_status(d).payment_draft)
+
+    def test_native_credit_note_refund_reduces_advance_evidence(self):
+        from erpnext.selling.doctype.sales_order.sales_order import make_sales_invoice
+        from erpnext.accounts.doctype.sales_invoice.sales_invoice import make_sales_return
+        d=contract(submit=True)
+        receipt(d,300,cash=True)
+        invoice=make_sales_invoice(d.sales_order)
+        invoice.set_advances()
+        for advance in invoice.advances:
+            advance.allocated_amount=advance.advance_amount
+        invoice.insert().submit()
+        credit_note=make_sales_return(invoice.name)
+        credit_note.set('advances',[])
+        for item in credit_note.items:
+            item.sales_order=item.so_detail=None
+        credit_note.insert().submit()
+        self.assertFalse(payment_status(d).payment_draft)
+        outgoing=refund(d,300,reference_doctype='Sales Invoice',reference_name=credit_note.name,
+            allocations=[('Sales Invoice',credit_note.name,-300)])
+        self.assertEqual(outgoing.references[0].allocated_amount,-300)
+        self.assertEqual(payment_status(d).confirmed,0)
+        self.assertTrue(payment_status(d).payment_draft)
+        outgoing.cancel()
+        self.assertFalse(payment_status(d).payment_draft)
+
+    def test_native_journal_cash_refund_fails_closed(self):
+        from erpnext.selling.doctype.sales_order.sales_order import make_sales_invoice
+        d=contract(submit=True)
+        receipt(d,300,cash=True)
+        invoice=make_sales_invoice(d.sales_order)
+        invoice.set_advances()
+        for advance in invoice.advances:
+            advance.allocated_amount=advance.advance_amount
+        invoice.insert().submit()
+        outgoing=frappe.get_doc(dict(doctype='Journal Entry',voucher_type='Journal Entry',
+            company=COMPANY,posting_date=today(),user_remark='Synthetic cash refund regression',
+            accounts=[dict(account=invoice.debit_to,party_type='Customer',party=d.customer,
+                debit_in_account_currency=300,reference_type='Sales Invoice',
+                reference_name=invoice.name,is_advance='No'),
+                dict(account='PZ Synthetic Cash - PZT',credit_in_account_currency=300)])).insert()
+        outgoing.submit()
+        self.assertEqual(outgoing.docstatus,1)
+        self.assertEqual(payment_status(d).confirmed,0)
+        self.assertTrue(payment_status(d).payment_draft)
+        outgoing.cancel()
+        self.assertFalse(payment_status(d).payment_draft)
+
+    def test_mixed_invoice_and_credit_note_refunds_fail_closed(self):
+        from erpnext.selling.doctype.sales_order.sales_order import make_sales_invoice
+        from erpnext.accounts.doctype.sales_invoice.sales_invoice import make_sales_return
+        first=contract(submit=True)
+        other=contract(customer=first.customer,submit=True)
+        receipt(first,300,cash=True)
+        invoice=make_sales_invoice(first.sales_order)
+        other_invoice=make_sales_invoice(other.sales_order)
+        invoice.append('items',other_invoice.items[0].as_dict())
+        invoice.set('advances',[])
+        invoice.insert().submit()
+        self.assertEqual(payment_status(first).confirmed,300)
+        outgoing=refund(first,100,reference_doctype='Sales Invoice',reference_name=invoice.name)
+        self.assertTrue(payment_status(first).payment_draft)
+        outgoing.cancel()
+        credit_note=make_sales_return(invoice.name)
+        credit_note.set('advances',[])
+        for item in credit_note.items:
+            item.sales_order=item.so_detail=None
+        multiple_items=frappe.db.get_single_value('Selling Settings','allow_multiple_items')
+        try:
+            frappe.db.set_single_value('Selling Settings','allow_multiple_items',1)
+            credit_note.insert().submit()
+        finally:
+            frappe.db.set_single_value('Selling Settings','allow_multiple_items',multiple_items)
+        outgoing=refund(first,200,reference_doctype='Sales Invoice',reference_name=credit_note.name,
+            allocations=[('Sales Invoice',credit_note.name,-200)])
+        self.assertTrue(payment_status(first).payment_draft)
+        outgoing.cancel()
+        self.assertFalse(payment_status(first).payment_draft)
+
+    def test_unsupported_persisted_refund_reference_fails_closed(self):
+        d=contract(submit=True)
+        receipt(d,400,cash=True)
+        receivable=frappe.db.get_value('Company',COMPANY,'default_receivable_account')
+        expense=frappe.db.get_value('Account',dict(company=COMPANY,is_group=0,root_type='Expense'),'name')
+        credit=frappe.get_doc(dict(doctype='Journal Entry',voucher_type='Journal Entry',
+            company=COMPANY,posting_date=today(),user_remark='Synthetic unsupported refund reference',
+            accounts=[dict(account=receivable,party_type='Customer',party=d.customer,
+                credit_in_account_currency=300,is_advance='No'),
+                dict(account=expense,debit_in_account_currency=300,
+                    cost_center=frappe.db.get_value('Company',COMPANY,'cost_center'))])).insert()
+        credit.submit()
+        self.assertFalse(payment_status(d).payment_draft)
+        outgoing=refund(d,100)
+        self.assertEqual(outgoing.unallocated_amount,0)
+        self.assertFalse(payment_status(d).payment_draft)
+        # Adversarial persisted reference on an otherwise valid native payout.
+        # Current native v16 rejects this JE allocation at entry time; older or
+        # external data must still fail closed rather than silently count it.
+        outgoing.references[0].db_set('reference_doctype','Journal Entry')
+        outgoing.references[0].db_set('reference_name',credit.name)
+        self.assertTrue(payment_status(d).payment_draft)
+        outgoing.references[0].db_set('reference_doctype','Sales Order')
+        outgoing.references[0].db_set('reference_name',d.sales_order)
+        outgoing.cancel()
+        self.assertFalse(payment_status(d).payment_draft)
+
     def test_print_and_payment_evidence_respect_native_currency_precision(self):
         from bs4 import BeautifulSoup
         previous=frappe.defaults.get_global_default('currency_precision')
         try:
-            for digits,rate,total,required,partial,shortfall,balance in [
-                (2,100.12,300.36,90.11,90.10,0.01,210.25),
-                (3,100.125,300.375,90.113,90.112,0.001,210.262)]:
+            for digits,qty,rate,total,required,partial,shortfall,balance in [
+                (2,3,100.12,300.36,90.11,90.10,0.01,210.25),
+                (3,3,100.125,300.375,90.113,90.112,0.001,210.262)]:
                 with self.subTest(currency_precision=digits):
                     frappe.defaults.set_global_default('currency_precision',str(digits))
-                    d=contract(submit=True,items=[dict(item_code='PZ Synthetic Bitumen',qty=3,uom='Nos',
+                    d=contract(submit=True,items=[dict(item_code='PZ Synthetic Bitumen',qty=qty,uom='Nos',
                         rate=rate,grade='60/70',packaging='Synthetic drums',specification_reference='Synthetic precision QA')])
                     self.assertEqual((d.grand_total,d.advance_required),(total,required))
                     self.assertEqual(frappe.db.get_value('Sales Order',d.sales_order,'grand_total'),total)
@@ -145,6 +301,13 @@ class TestPZSalesContract(IntegrationTestCase):
         amendment.amended_from=d.name
         amendment.sales_order=None
         amendment.first_family=None
+        frappe.set_user('pz-sales@example.invalid')
+        self.assertFalse(frappe.has_permission(d.doctype,'amend'))
+        denied=frappe.copy_doc(amendment)
+        denied.amended_from=d.name
+        with self.assertRaises(frappe.PermissionError):
+            denied.insert()
+        frappe.set_user('Administrator')
         amendment.insert()
         self.assertEqual(amendment.first_family,family)
         self.assertTrue(payment_status(amendment).payment_draft)
@@ -264,6 +427,55 @@ class TestPZSalesContract(IntegrationTestCase):
             frappe.local.form_dict=old
             pf.db_set('print_format_builder_beta',0)
 
+    def test_weasyprint_download_aliases_rejected_before_render(self):
+        from pz_sales_contract.printing import guard_renderer
+        from frappe.utils.weasyprint import download_pdf
+        from frappe.printing.doctype.print_format.print_format import download_pdf as alias
+        self.assertIs(alias,download_pdf)
+        self.assertIn(alias,frappe.whitelisted)
+        old_values,old_request=frappe.local.form_dict,getattr(frappe.local,'request',None)
+        try:
+            for command in ['frappe.utils.weasyprint.download_pdf',
+                    'frappe.printing.doctype.print_format.print_format.download_pdf']:
+                with self.subTest(command=command):
+                    frappe.local.form_dict=frappe._dict(doctype='PZ Sales Contract',
+                        cmd=command,print_format='Standard')
+                    frappe.local.request=frappe._dict(path='/api/method')
+                    with self.assertRaises(frappe.ValidationError): guard_renderer()
+            # Explicit route identity must win over a misleading body cmd. API v2
+            # also supports a DocType shortcut expanded after before_request hooks.
+            for path in ['/api/method/frappe.utils.weasyprint.download_pdf',
+                    '/api/v2/method/frappe.printing.doctype.print_format.print_format.download_pdf',
+                    '/api/v2/method/Print Format/download_pdf']:
+                with self.subTest(path=path):
+                    frappe.local.form_dict=frappe._dict(doctype='PZ Sales Contract',
+                        cmd='frappe.utils.print_format.download_pdf',print_format='Standard')
+                    frappe.local.request=frappe._dict(path=path)
+                    with self.assertRaises(frappe.ValidationError): guard_renderer()
+                    frappe.local.form_dict.doctype='Sales Order'
+                    guard_renderer()
+        finally:
+            frappe.local.form_dict,frappe.local.request=old_values,old_request
+
+    def test_chrome_format_configuration_rejected(self):
+        from pz_sales_contract.printing import validate_format,guard_renderer
+        with self.assertRaises(frappe.ValidationError):
+            validate_format(frappe._dict(doc_type='PZ Sales Contract',pdf_generator='chrome'))
+        pf=frappe.get_doc('Print Format','Petrol Zone Sales Contract')
+        old_generator,old_values=pf.pdf_generator,frappe.local.form_dict
+        try:
+            # A preexisting stored renderer is selected by native batch printing
+            # even when the request has no explicit pdf_generator parameter.
+            pf.db_set('pdf_generator','chrome')
+            for doctype,command in [('PZ Sales Contract','frappe.utils.print_format.download_pdf'),
+                    ({'PZ Sales Contract':['synthetic']},'frappe.utils.print_format.download_multi_pdf')]:
+                with self.subTest(command=command):
+                    frappe.local.form_dict=frappe._dict(doctype=doctype,cmd=command,format=pf.name)
+                    with self.assertRaises(frappe.ValidationError): guard_renderer()
+        finally:
+            pf.db_set('pdf_generator',old_generator)
+            frappe.local.form_dict=old_values
+
     def test_tax_zero_after_full_net_discount_and_actual_charge(self):
         account=frappe.db.get_value('Account',dict(company=COMPANY,is_group=0,root_type='Income'),'name')
         d=contract(discount_amount=1000,taxes=[
@@ -323,13 +535,13 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertNotIn('Later master change',html)
         self.assertIn('Synthetic closure',html)
 
-    def historical_order(self):
+    def historical_order(self,qty=10,rate=100):
         from pz_sales_contract.testing import new_customer
         customer,address,contact=new_customer()
         order=frappe.get_doc(dict(doctype='Sales Order',customer=customer,company=COMPANY,
             transaction_date=today(),delivery_date=today(),currency='USD',conversion_rate=1,
             selling_price_list='PZ Synthetic USD',order_type='Sales',customer_address=address.name,
-            contact_person=contact.name,items=[dict(item_code='PZ Synthetic Bitumen',qty=10,rate=100,
+            contact_person=contact.name,items=[dict(item_code='PZ Synthetic Bitumen',qty=qty,rate=rate,
             delivery_date=today())])).insert()
         order.submit()
         return order
@@ -338,6 +550,53 @@ class TestPZSalesContract(IntegrationTestCase):
         return frappe.get_doc(dict(doctype='PZ Customer History',customer=order.customer,company=order.company,
             sales_order=order.name,prior_contract_evidence='Synthetic prior signed contract and finance migration review',
             bank_receiving_account='PZ Synthetic Bank - PZT',cash_receiving_account='PZ Synthetic Cash - PZT')).insert()
+
+    def test_current_and_history_advances_respect_zero_decimal_precision(self):
+        fields=[frappe.get_meta(doctype).get_field('advance_required')
+            for doctype in ['PZ Sales Contract','PZ Customer History']]
+        previous=[field.precision for field in fields]
+        try:
+            # Native DocField precision supports "0". Configure only the isolated
+            # cached metadata and restore it, without persisting a customization.
+            for field in fields: field.precision='0'
+            current=contract(submit=True,items=[dict(item_code='PZ Synthetic Bitumen',
+                qty=1,uom='Nos',rate=101,grade='60/70',packaging='Synthetic drums',
+                specification_reference='Synthetic zero-decimal precision QA')])
+            self.assertEqual(current.precision('advance_required'),0)
+            self.assertEqual(current.advance_required,30)
+            self.assertEqual(get_status(current.name).currency_precision,0)
+            self.assertIn('30% advance: 30',frappe.get_print(current.doctype,current.name))
+            receipt(current,29,cash=True)
+            self.assertTrue(payment_status(current).payment_draft)
+            receipt(current,1,cash=True)
+            self.assertFalse(payment_status(current).payment_draft)
+            order=self.historical_order(qty=1,rate=101)
+            self.assertEqual(order.grand_total,101)
+            history=self.historical_designation(order)
+            self.assertEqual(history.precision('advance_required'),0)
+            self.assertEqual(history.advance_required,30)
+            receipt(frappe._dict(sales_order=order.name),30,cash=True)
+            history.submit()
+            self.assertEqual(history.docstatus,1)
+        finally:
+            for field,value in zip(fields,previous,strict=True): field.precision=value
+
+    def test_refunded_history_cannot_establish_returning_status(self):
+        order=self.historical_order()
+        receipt(frappe._dict(sales_order=order.name),300,cash=True)
+        outgoing=refund(frappe._dict(sales_order=order.name),300)
+        self.assertEqual(frappe.db.get_value('Sales Order',order.name,'advance_paid'),0)
+        history=self.historical_designation(order)
+        with self.assertRaises(frappe.ValidationError): history.submit()
+        outgoing.cancel()
+        history.reload()
+        history.submit()
+        first=contract(customer=order.customer)
+        self.assertFalse(payment_status(first).payment_draft)
+        refund(frappe._dict(sales_order=order.name),300)
+        self.assertFalse(payment_status(first).established_history)
+        self.assertTrue(payment_status(first).payment_draft)
+        self.assertFalse(payment_status(contract(customer=order.customer)).payment_draft)
 
     def test_finance_history_establishes_returning_and_cancellation_restores_family(self):
         order=self.historical_order()

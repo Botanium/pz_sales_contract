@@ -4,7 +4,7 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "pz_sales_contract"
-version = "0.1.0"
+version = "0.1.1"
 description = "Petrol Zone bitumen sales contracts for ERPNext v16"
 authors = [{name = "Petrol Zone"}]
 requires-python = ">=3.14"
