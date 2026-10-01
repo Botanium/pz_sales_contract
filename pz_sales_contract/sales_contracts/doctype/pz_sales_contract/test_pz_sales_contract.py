@@ -140,7 +140,14 @@ class TestPZSalesContract(IntegrationTestCase):
         doc.reload().save()
         self.assertEqual(doc.governing_law, saved_law)
 
-        later = contract(**({fieldname: None for fieldname in COMPANY_DEFAULT_FIELDS}))
+        self.assertEqual(frappe.db.get_value('PZ Contract Defaults', COMPANY, 'currency'), settings.currency)
+        self.assertEqual(frappe.db.get_value('PZ Contract Defaults', COMPANY, 'selling_price_list'), settings.selling_price_list)
+        later = contract(insert=False, **({fieldname: None for fieldname in COMPANY_DEFAULT_FIELDS}))
+        later.set('__islocal', True)
+        later.before_validate()
+        self.assertEqual(later.currency, settings.currency)
+        self.assertEqual(later.selling_price_list, settings.selling_price_list)
+        later.insert()
         self.assertEqual(later.governing_law, settings.governing_law)
 
     def test_company_defaults_links_currency_and_accounts_fail_closed(self):
