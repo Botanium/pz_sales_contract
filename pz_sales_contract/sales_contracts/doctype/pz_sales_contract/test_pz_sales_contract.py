@@ -116,6 +116,9 @@ class TestPZSalesContract(IntegrationTestCase):
             'beneficiary': 'SYNTHETIC DEAL-SPECIFIC BENEFICIARY',
         }
         doc = contract(customer=customer, insert=False, **(blank_fields | overrides))
+        self.assertTrue(frappe.db.exists('PZ Contract Defaults', COMPANY))
+        self.assertEqual(frappe.db.get_value('PZ Contract Defaults', COMPANY, 'currency'), settings.currency)
+        doc.set('__islocal', True)
         doc.before_validate()
         self.assertEqual(doc.currency, settings.currency)
         self.assertEqual(doc.conversion_rate, settings.conversion_rate)
