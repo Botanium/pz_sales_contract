@@ -21,6 +21,10 @@ CURRENCY_DEPENDENT_DEFAULT_FIELDS = frozenset({
     'swift_reference',
 })
 
+BANK_INSTRUCTION_DEFAULT_FIELDS = frozenset({
+    'beneficiary', 'bank_branch', 'account_iban', 'swift_reference',
+})
+
 
 class PZSalesContract(Document):
     def _set_defaults(self):
@@ -80,7 +84,7 @@ class PZSalesContract(Document):
         if self.amended_from or not self.company:
             return
         defaults = frappe.db.get_value(
-            'PZ Contract Defaults', self.company, list(COMPANY_DEFAULT_FIELDS), as_dict=True
+            'PZ Contract Defaults', {'company': self.company}, list(COMPANY_DEFAULT_FIELDS), as_dict=True
         )
         if not defaults:
             return
@@ -148,11 +152,23 @@ class PZSalesContract(Document):
             for fieldname in initially_blank:
                 self.set(fieldname, None)
 
+        # Instructions identify a particular bank, not just a currency. A
+        # deliberate alternate bank needs its own complete instructions.
+        profile_bank = defaults.get('bank_receiving_account')
+        uses_profile_bank = bool(profile_bank) and (
+            self.bank_receiving_account == profile_bank
+            or not self.bank_receiving_account
+            or 'bank_receiving_account' in initially_blank
+        )
         for fieldname in COMPANY_DEFAULT_FIELDS:
             if fieldname in CURRENCY_DEPENDENT_DEFAULT_FIELDS:
                 if not configured_bundle:
                     continue
                 if not currency_matches or explicit_dependency_conflict:
+                    continue
+                if fieldname in BANK_INSTRUCTION_DEFAULT_FIELDS and not uses_profile_bank:
+                    if fieldname in initially_blank:
+                        self.set(fieldname, None)
                     continue
                 if fieldname in initially_blank:
                     configured_value = defaults.get(fieldname)
@@ -231,7 +247,7 @@ class PZSalesContract(Document):
                     linked.email_id, linked.mobile_no or linked.phone] if v)
         frappe.get_doc('Company', self.company).check_permission('read')
         currency = frappe.db.get_value('Company', self.company, 'default_currency')
-        if self.conversion_rate <= 0 or (currency == self.currency and self.conversion_rate != 1):
+        if not self.conversion_rate or self.conversion_rate <= 0 or (currency == self.currency and self.conversion_rate != 1):
             frappe.throw('Set a valid exchange rate; company currency must use 1')
         price_list = frappe.get_doc('Price List', self.selling_price_list)
         if not price_list.enabled or not price_list.selling or price_list.currency != self.currency:

@@ -124,6 +124,7 @@ class TestPZSalesContract(IntegrationTestCase):
                     currency=currency, selling=1, enabled=1)).insert()
         inr_bank = self.synthetic_company_account('PZ Synthetic INR Bank', 'Bank', 'INR')
         inr_cash = self.synthetic_company_account('PZ Synthetic INR Cash', 'Cash', 'INR')
+        eur_bank = self.synthetic_company_account('PZ Synthetic EUR Bank', 'Bank', 'EUR')
         eur_list = 'PZ Synthetic EUR'
         inr_list = 'PZ Synthetic INR'
         settings = self.synthetic_company_defaults(
@@ -138,6 +139,9 @@ class TestPZSalesContract(IntegrationTestCase):
             'delivery_arrangement': 'Synthetic deal-specific delivery override',
             'bank_receiving_account': self.synthetic_alternate_bank_account('INR'),
             'beneficiary': 'SYNTHETIC DEAL-SPECIFIC BENEFICIARY',
+            'bank_branch': 'SYNTHETIC DEAL-SPECIFIC BANK',
+            'account_iban': 'INR / SYNTHETIC-DEAL-SPECIFIC-ACCOUNT',
+            'swift_reference': 'SYNTHETIC DEAL-SPECIFIC REFERENCE',
         }
         doc = contract(customer=customer, insert=False, **(blank_fields | overrides))
         self.assertTrue(frappe.db.exists('PZ Contract Defaults', COMPANY))
@@ -211,15 +215,33 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertEqual((explicit_usd.currency, explicit_usd.selling_price_list,
             explicit_usd.bank_receiving_account), ('USD', 'PZ Synthetic USD', 'PZ Synthetic Bank - PZT'))
 
-        # A different-currency deal is allowed when its own bundle is coherent;
-        # the USD defaults are not mixed into its optional receiving instructions.
+        # A different-currency deal must still supply all mandatory payment
+        # instructions. The USD profile must not complete an EUR bundle.
+        incomplete_eur = contract(customer=customer, insert=False, **(blank_fields | {
+            'currency': 'EUR', 'conversion_rate': 1.2, 'selling_price_list': eur_list,
+        }))
+        frappe.db.savepoint('incomplete_eur_company_defaults')
+        with self.assertRaises(frappe.MandatoryError):
+            incomplete_eur.insert()
+        frappe.db.rollback(save_point='incomplete_eur_company_defaults')
+        self.assertIsNone(incomplete_eur.bank_receiving_account)
+        self.assertIsNone(incomplete_eur.account_iban)
+
+        # A complete, deliberate EUR deal keeps its own receiving instructions.
+        eur_instructions = {
+            'bank_receiving_account': eur_bank, 'cash_receiving_account': None,
+            'beneficiary': 'SYNTHETIC EUR BENEFICIARY',
+            'bank_branch': 'SYNTHETIC EUR BRANCH',
+            'account_iban': 'EUR / SYNTHETIC-NOT-AN-ACCOUNT',
+            'swift_reference': 'SYNTHETIC EUR REFERENCE',
+        }
         explicit_eur = contract(customer=customer, insert=False, **(blank_fields | {
             'currency': 'EUR', 'conversion_rate': 1.2, 'selling_price_list': eur_list,
-            'bank_receiving_account': None, 'cash_receiving_account': None,
-        }))
+        } | eur_instructions))
         explicit_eur.insert()
         self.assertEqual((explicit_eur.currency, explicit_eur.selling_price_list), ('EUR', eur_list))
-        self.assertIsNone(explicit_eur.bank_receiving_account)
+        for fieldname, expected in eur_instructions.items():
+            self.assertEqual(explicit_eur.get(fieldname), expected, fieldname)
         mismatched_eur = contract(customer=customer, insert=False, **(blank_fields | {
             'currency': 'EUR', 'conversion_rate': 1.2, 'selling_price_list': 'PZ Synthetic USD',
             'bank_receiving_account': None, 'cash_receiving_account': None,
@@ -286,6 +308,32 @@ class TestPZSalesContract(IntegrationTestCase):
             settings.set(fieldname, value)
         settings.save()
 
+    def test_alternate_bank_requires_its_own_payment_instructions(self):
+        self.clear_synthetic_company_defaults()
+        self.synthetic_company_defaults().insert()
+        alternate_bank = self.synthetic_alternate_bank_account()
+        blank_instructions = dict.fromkeys(
+            ('beneficiary', 'bank_branch', 'account_iban', 'swift_reference')
+        )
+        doc = contract(insert=False, bank_receiving_account=alternate_bank, **blank_instructions)
+        frappe.db.savepoint('alternate_bank_instructions')
+        with self.assertRaises(frappe.MandatoryError):
+            doc.insert()
+        frappe.db.rollback(save_point='alternate_bank_instructions')
+        self.assertEqual(doc.bank_receiving_account, alternate_bank)
+        for fieldname in blank_instructions:
+            self.assertIsNone(doc.get(fieldname), fieldname)
+
+        own_instructions = {
+            'beneficiary': 'SYNTHETIC ALTERNATE BENEFICIARY',
+            'bank_branch': 'SYNTHETIC ALTERNATE BRANCH',
+            'account_iban': 'USD / SYNTHETIC-ALTERNATE-ACCOUNT',
+            'swift_reference': 'SYNTHETIC ALTERNATE REFERENCE',
+        }
+        complete = contract(bank_receiving_account=alternate_bank, **own_instructions)
+        for fieldname, value in own_instructions.items():
+            self.assertEqual(complete.get(fieldname), value, fieldname)
+
     def test_company_defaults_links_currency_and_accounts_fail_closed(self):
         from pz_sales_contract.testing import new_customer
 
@@ -327,6 +375,8 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertEqual(returned['bank_receiving_account'], settings.bank_receiving_account)
         self.assertEqual(returned['governing_law'], settings.governing_law)
         self.assertNotIn('company', returned)
+        with self.assertRaises(frappe.FrappeTypeError):
+            get_company_defaults({'name': COMPANY})
 
     def test_defaults_record_company_cannot_be_changed(self):
         self.clear_synthetic_company_defaults()
@@ -336,6 +386,22 @@ class TestPZSalesContract(IntegrationTestCase):
             settings.save()
         settings.reload()
         self.assertEqual(settings.company, COMPANY)
+
+    def test_defaults_follow_native_company_rename(self):
+        self.clear_synthetic_company_defaults()
+        settings = self.synthetic_company_defaults().insert()
+        renamed_company = 'PZ Synthetic Renamed Defaults Company'
+        frappe.rename_doc('Company', COMPANY, renamed_company, force=True)
+        try:
+            settings.reload()
+            self.assertEqual(settings.company, renamed_company)
+            self.assertEqual(settings.name, COMPANY)
+            self.assertEqual(get_company_defaults(renamed_company)['seller_signatory'], settings.seller_signatory)
+            doc = contract(company=renamed_company, seller_signatory=None)
+            self.assertEqual(doc.seller_signatory, settings.seller_signatory)
+        finally:
+            # Native IntegrationTestCase shares fixture state between methods.
+            frappe.rename_doc('Company', renamed_company, COMPANY, force=True)
 
     def test_first_and_returning_contracts_and_no_toggle(self):
         first=contract(submit=True)

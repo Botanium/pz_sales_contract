@@ -86,14 +86,16 @@ class PZContractDefaults(Document):
 
 
 @frappe.whitelist()
-def get_company_defaults(company):
+def get_company_defaults(company: str):
     """Return this company's optional, non-secret defaults to a contract creator."""
     if not frappe.has_permission("PZ Sales Contract", "create"):
         frappe.throw("You need permission to create a PZ Sales Contract")
+    if not isinstance(company, str):
+        frappe.throw("Select a Company by name")
 
     company_doc = frappe.get_doc("Company", company)
     company_doc.check_permission("read")
-    values = frappe.db.get_value("PZ Contract Defaults", company, list(COMPANY_DEFAULT_FIELDS), as_dict=True)
+    values = frappe.db.get_value("PZ Contract Defaults", {"company": company_doc.name}, list(COMPANY_DEFAULT_FIELDS), as_dict=True)
     if not values:
         return {}
     return {
