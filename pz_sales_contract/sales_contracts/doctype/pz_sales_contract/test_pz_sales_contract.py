@@ -168,9 +168,12 @@ class TestPZSalesContract(IntegrationTestCase):
             incompatible_native.insert()
         frappe.db.rollback(save_point='incompatible_native_currency_defaults')
         self.assertEqual(incompatible_native.currency, 'INR')
+        self.assertEqual(incompatible_native.seller_signatory, settings.seller_signatory)
+        self.assertIsNone(incompatible_native.conversion_rate)
         self.assertIsNone(incompatible_native.selling_price_list)
         self.assertIsNone(incompatible_native.bank_receiving_account)
         self.assertIsNone(incompatible_native.cash_receiving_account)
+        self.assertIsNone(incompatible_native.account_iban)
 
         # An intentional USD deal with a coherent explicit bundle stays intact.
         explicit_usd = contract(customer=customer, insert=False, **(blank_fields | {
