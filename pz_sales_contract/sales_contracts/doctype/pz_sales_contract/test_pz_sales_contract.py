@@ -115,9 +115,25 @@ class TestPZSalesContract(IntegrationTestCase):
             'bank_receiving_account': self.synthetic_alternate_bank_account(),
             'beneficiary': 'SYNTHETIC DEAL-SPECIFIC BENEFICIARY',
         }
-        doc = contract(customer=customer, **(blank_fields | overrides))
+        doc = contract(customer=customer, insert=False, **(blank_fields | overrides))
         self.assertTrue(frappe.db.exists('PZ Contract Defaults', COMPANY))
         self.assertEqual(frappe.db.get_value('PZ Contract Defaults', COMPANY, 'currency'), settings.currency)
+        try:
+            doc.insert()
+        except frappe.ValidationError as error:
+            defaults = frappe.db.get_value(
+                'PZ Contract Defaults', COMPANY, ['currency', 'selling_price_list'], as_dict=True
+            )
+            price_list = frappe.get_doc('Price List', doc.selling_price_list) if doc.selling_price_list else None
+            operands = {
+                'contract_currency': doc.currency,
+                'contract_selling_price_list': doc.selling_price_list,
+                'price_list_currency': price_list.currency if price_list else None,
+                'price_list_enabled': price_list.enabled if price_list else None,
+                'price_list_selling': price_list.selling if price_list else None,
+                'database_defaults': defaults,
+            }
+            self.fail(f'Contract insert rejected: {error}; price-list validation operands: {operands!r}')
         self.assertEqual(doc.currency, settings.currency)
         self.assertEqual(doc.conversion_rate, settings.conversion_rate)
         self.assertEqual(doc.selling_price_list, settings.selling_price_list)
