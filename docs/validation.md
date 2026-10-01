@@ -1,6 +1,16 @@
 # Validation evidence
 
-## Dedicated app permissions (2026-10-01)
+## Refund and review fixes — version 0.1.1 (2026-10-01)
+
+- Follow-up is based on merged main `44527abe71ed2e68556fc04b9e3a9abf9f585625`. Independent standards and requirements reviews identified one P1 refunded-advance defect and five P2 controller/print-permission issues.
+- Native regressions first reproduced the incorrect current-order, invoice-reconciled and finance-history refund thresholds. A further native invoice-linked Customer debit/Cash credit Journal Entry submitted successfully while the app incorrectly retained confirmed 300; the regression now passes with evidence invalidated. Mixed-order invoice/credit-note payouts and credit-note header ancestry are also covered.
+- 34 native integration tests and 6 calendar tests pass against the exact Frappe 16.36.0/ERPNext 16.37.0 revisions below. Coverage includes net Pay refunds, negative credit-note allocation signs, refund cancellation, additional receipts after partial refunds, ambiguous unallocated payouts, unrelated/mixed payouts, refunded historical designation revalidation, unsupported persisted payout references, native zero-decimal precision, Sales Order named place, denied user amendment and all reviewed native renderer aliases/paths/stored Chrome selection.
+- Current native v16 rejects the attempted synthetic Pay allocation to the unmatched credit Journal Entry before submission. Unsupported-reference handling is therefore tested with an explicitly adversarial persisted reference on an otherwise valid native payout; it is a defensive fail-closed check, not a claim that this exact allocation is accepted by native v16.
+- Two further migrations on the separate install-check site preserve every existing user role assignment and Administrator/finance permissions. No migration assigns an app role to a user.
+- Five synthetic PDF cases pass on patched-Qt wkhtmltopdf 0.12.5 and 0.12.6.1: draft, paid, fully refunded first contract and returning contract have 6 pages each; the 30-item draft has 8. Text lengths/page counts match between engines. Refunded first-contract DRAFT appears on every page, and paid/returning outputs remain unmarked. All 32 pages of the 0.12.5 outputs were visually inspected with no clipping, overlap, broken tables or missing signatures. Actual production binary/fonts/hook ordering still require read-only acceptance.
+- Qualifying incoming receipt criteria and the authorized first-family-only policy are unchanged. Fully allocated unrelated order/invoice payouts remain excluded. Ambiguous or unsupported same-customer/company refunds keep the first family in DRAFT until finance resolves them; they never establish finance history.
+
+## Dedicated app permissions (earlier 0.1.0 validation, 2026-10-01)
 
 - A native regression first failed with 20 generic-role access assertions against the previous permissions and passed after replacing them with dedicated `PZ Sales Contract User` and `PZ Sales Contract Manager` permissions. Generic Sales User, Sales Manager, Accounts Manager and System Manager users have no contract access; Administrator retains native full access.
 - 23 native integration tests and 6 calendar tests passed in a new isolated Docker bench at Frappe `f3f0c0b13c77a419487150a198fed42964e1919e` (16.36.0), ERPNext `af63cde4941570ec7b9e12422c68302762cfcf91` (16.37.0), Python 3.14.7 and MariaDB 11.8. App manager permissions include create/read/write/submit/cancel/amend/print and add no finance-history, payment or registry permissions.
@@ -43,4 +53,4 @@ Bank receipts require full native reconciliation of the receipt before its contr
 
 No production records were changed to test. No live historical customer classification or migration was performed. The app supports additional exclusive Actual/On Net Total taxes, net-total discount, and same-day business schedules. Native beta/WeasyPrint/Chrome contract PDF paths are rejected because they bypass Frappe's enforced body hook. Existing custom integrations that use those renderers must use native wkhtmltopdf.
 
-GitHub CI creates its own fresh v16 bench and synthetic site; its status is visible on the draft pull request. A local native pass does not imply a future CI run passed.
+GitHub CI creates its own fresh v16 bench and synthetic site; its status is visible on the follow-up pull request. A local native pass does not imply a future CI run passed.
