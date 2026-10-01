@@ -113,7 +113,7 @@ class TestContractFormDefinition(unittest.TestCase):
         self.assertIn("company", self.default_controller)
         self.assertIn('frappe.has_permission("PZ Sales Contract", "create")', self.default_controller)
         self.assertIn('company_doc.check_permission("read")', self.default_controller)
-        self.assertIn('if not self.is_new() or self.amended_from or not self.company:', self.controller)
+        self.assertIn('if not self.flags.in_insert or self.amended_from or not self.company:', self.controller)
         self.assertIn("'PZ Contract Defaults'", self.controller)
 
     def test_company_change_resets_company_values_without_erasing_customer_deal(self):

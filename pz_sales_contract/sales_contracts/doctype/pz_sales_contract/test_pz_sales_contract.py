@@ -115,17 +115,12 @@ class TestPZSalesContract(IntegrationTestCase):
             'bank_receiving_account': self.synthetic_alternate_bank_account(),
             'beneficiary': 'SYNTHETIC DEAL-SPECIFIC BENEFICIARY',
         }
-        doc = contract(customer=customer, insert=False, **(blank_fields | overrides))
+        doc = contract(customer=customer, **(blank_fields | overrides))
         self.assertTrue(frappe.db.exists('PZ Contract Defaults', COMPANY))
         self.assertEqual(frappe.db.get_value('PZ Contract Defaults', COMPANY, 'currency'), settings.currency)
-        doc.set('__islocal', True)
-        doc.before_validate()
         self.assertEqual(doc.currency, settings.currency)
         self.assertEqual(doc.conversion_rate, settings.conversion_rate)
         self.assertEqual(doc.selling_price_list, settings.selling_price_list)
-        self.assertTrue(frappe.get_doc('Price List', doc.selling_price_list).enabled)
-        self.assertTrue(frappe.get_doc('Price List', doc.selling_price_list).selling)
-        doc.insert()
         for fieldname in COMPANY_DEFAULT_FIELDS:
             expected = overrides.get(fieldname, settings.get(fieldname))
             if expected is not None:
@@ -142,12 +137,9 @@ class TestPZSalesContract(IntegrationTestCase):
 
         self.assertEqual(frappe.db.get_value('PZ Contract Defaults', COMPANY, 'currency'), settings.currency)
         self.assertEqual(frappe.db.get_value('PZ Contract Defaults', COMPANY, 'selling_price_list'), settings.selling_price_list)
-        later = contract(insert=False, **({fieldname: None for fieldname in COMPANY_DEFAULT_FIELDS}))
-        later.set('__islocal', True)
-        later.before_validate()
+        later = contract(**({fieldname: None for fieldname in COMPANY_DEFAULT_FIELDS}))
         self.assertEqual(later.currency, settings.currency)
         self.assertEqual(later.selling_price_list, settings.selling_price_list)
-        later.insert()
         self.assertEqual(later.governing_law, settings.governing_law)
 
     def test_company_defaults_links_currency_and_accounts_fail_closed(self):

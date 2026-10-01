@@ -37,7 +37,7 @@ class PZSalesContract(Document):
         # Copy configured company values into blanks on creation only. The saved
         # contract remains its own snapshot if the defaults are changed later.
         # Amendments must preserve the cancelled agreement they replace.
-        if not self.is_new() or self.amended_from or not self.company:
+        if not self.flags.in_insert or self.amended_from or not self.company:
             return
         defaults = frappe.db.get_value(
             'PZ Contract Defaults', self.company, list(COMPANY_DEFAULT_FIELDS), as_dict=True
