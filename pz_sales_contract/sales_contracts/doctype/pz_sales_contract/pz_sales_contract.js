@@ -276,7 +276,15 @@ frappe.ui.form.on("PZ Sales Contract", {
     if (frm.is_new() && !frm.doc.amended_from && frm.doc.company) loadCompanyDefaults(frm);
     if (frm.is_new() && !frm.doc.amended_from && frm.doc.company && frappe.user.has_role("System Manager")) {
       frm.add_custom_button("Company Contract Defaults", () => {
-        frappe.new_doc("PZ Contract Defaults", { company: frm.doc.company });
+        const company = frm.doc.company;
+        frappe.db.exists("PZ Contract Defaults", company).then((exists) => {
+          if (frm.doc.company !== company) return;
+          if (exists) frappe.set_route("Form", "PZ Contract Defaults", company);
+          else frappe.new_doc("PZ Contract Defaults", { company });
+        }).catch(() => frappe.show_alert({
+          message: __("Could not check Company Contract Defaults. Please try again."),
+          indicator: "orange",
+        }));
       }, __("Setup"));
     }
     if (!frm.is_new()) frm.add_custom_button("Advance evidence", () => {
