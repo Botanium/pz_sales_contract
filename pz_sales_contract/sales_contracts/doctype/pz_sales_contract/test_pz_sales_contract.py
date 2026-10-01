@@ -76,13 +76,16 @@ class TestPZSalesContract(IntegrationTestCase):
         values.update(overrides)
         return frappe.get_doc(values)
 
-    def synthetic_alternate_bank_account(self):
-        name = 'PZ Synthetic Alternate Bank - PZT'
+    def synthetic_company_account(self, account_name, kind, currency):
+        name = f'{account_name} - PZT'
         if not frappe.db.exists('Account', name):
             parent = frappe.db.get_value('Account', dict(company=COMPANY, is_group=1, root_type='Asset'), 'name')
-            frappe.get_doc(dict(doctype='Account', account_name='PZ Synthetic Alternate Bank', company=COMPANY,
-                parent_account=parent, account_currency='USD', account_type='Bank', is_group=0)).insert()
+            frappe.get_doc(dict(doctype='Account', account_name=account_name, company=COMPANY,
+                parent_account=parent, account_currency=currency, account_type=kind, is_group=0)).insert()
         return name
+
+    def synthetic_alternate_bank_account(self, currency='USD'):
+        return self.synthetic_company_account(f'PZ Synthetic Alternate Bank {currency}', 'Bank', currency)
 
     def test_native_arithmetic_and_master_links(self):
         tax_account=frappe.db.get_value('Account',dict(company=COMPANY,is_group=0,root_type='Income'),'name')
@@ -98,6 +101,15 @@ class TestPZSalesContract(IntegrationTestCase):
 
     def test_legacy_explicit_entry_without_company_defaults_still_works(self):
         self.clear_synthetic_company_defaults()
+        from frappe.model.document import Document
+
+        actual_defaults = frappe.get_doc(dict(doctype='PZ Sales Contract', company=COMPANY))
+        native_defaults = frappe.get_doc(dict(doctype='PZ Sales Contract', company=COMPANY))
+        Document._set_defaults(native_defaults)
+        actual_defaults._set_defaults()
+        for fieldname in COMPANY_DEFAULT_FIELDS:
+            self.assertEqual(actual_defaults.get(fieldname), native_defaults.get(fieldname), fieldname)
+
         doc = contract()
         self.assertEqual(doc.currency, 'USD')
         self.assertEqual(doc.seller_signatory, 'Synthetic Seller')
@@ -106,34 +118,31 @@ class TestPZSalesContract(IntegrationTestCase):
 
     def test_company_defaults_fill_blanks_preserve_overrides_and_snapshot(self):
         self.clear_synthetic_company_defaults()
-        settings = self.synthetic_company_defaults().insert()
+        for price_list_name, currency in [('PZ Synthetic INR', 'INR'), ('PZ Synthetic EUR', 'EUR')]:
+            if not frappe.db.exists('Price List', price_list_name):
+                frappe.get_doc(dict(doctype='Price List', price_list_name=price_list_name,
+                    currency=currency, selling=1, enabled=1)).insert()
+        inr_bank = self.synthetic_company_account('PZ Synthetic INR Bank', 'Bank', 'INR')
+        inr_cash = self.synthetic_company_account('PZ Synthetic INR Cash', 'Cash', 'INR')
+        eur_list = 'PZ Synthetic EUR'
+        inr_list = 'PZ Synthetic INR'
+        settings = self.synthetic_company_defaults(
+            currency='INR', conversion_rate=130, selling_price_list=inr_list,
+            bank_receiving_account=inr_bank, cash_receiving_account=inr_cash,
+            account_iban='INR / SYNTHETIC-NOT-AN-ACCOUNT',
+        ).insert()
         customer, _, _ = new_customer()
         blank_fields = {fieldname: None for fieldname in COMPANY_DEFAULT_FIELDS}
         overrides = {
             'seller_signatory': 'Synthetic one-off seller override',
             'delivery_arrangement': 'Synthetic deal-specific delivery override',
-            'bank_receiving_account': self.synthetic_alternate_bank_account(),
+            'bank_receiving_account': self.synthetic_alternate_bank_account('INR'),
             'beneficiary': 'SYNTHETIC DEAL-SPECIFIC BENEFICIARY',
         }
         doc = contract(customer=customer, insert=False, **(blank_fields | overrides))
         self.assertTrue(frappe.db.exists('PZ Contract Defaults', COMPANY))
         self.assertEqual(frappe.db.get_value('PZ Contract Defaults', COMPANY, 'currency'), settings.currency)
-        try:
-            doc.insert()
-        except frappe.ValidationError as error:
-            defaults = frappe.db.get_value(
-                'PZ Contract Defaults', COMPANY, ['currency', 'selling_price_list'], as_dict=True
-            )
-            price_list = frappe.get_doc('Price List', doc.selling_price_list) if doc.selling_price_list else None
-            operands = {
-                'contract_currency': doc.currency,
-                'contract_selling_price_list': doc.selling_price_list,
-                'price_list_currency': price_list.currency if price_list else None,
-                'price_list_enabled': price_list.enabled if price_list else None,
-                'price_list_selling': price_list.selling if price_list else None,
-                'database_defaults': defaults,
-            }
-            self.fail(f'Contract insert rejected: {error}; price-list validation operands: {operands!r}')
+        doc.insert()
         self.assertEqual(doc.currency, settings.currency)
         self.assertEqual(doc.conversion_rate, settings.conversion_rate)
         self.assertEqual(doc.selling_price_list, settings.selling_price_list)
@@ -144,6 +153,62 @@ class TestPZSalesContract(IntegrationTestCase):
                 if fieldname in ('opens_at', 'closes_at'):
                     actual, expected = get_timedelta(actual), get_timedelta(expected)
                 self.assertEqual(actual, expected, fieldname)
+
+        # A different native currency must not receive a partial INR bundle.
+        settings.currency = 'USD'
+        settings.conversion_rate = 1
+        settings.selling_price_list = 'PZ Synthetic USD'
+        settings.bank_receiving_account = 'PZ Synthetic Bank - PZT'
+        settings.cash_receiving_account = 'PZ Synthetic Cash - PZT'
+        settings.account_iban = 'USD / SYNTHETIC-NOT-AN-ACCOUNT'
+        settings.save()
+        incompatible_native = contract(customer=customer, insert=False, **blank_fields)
+        frappe.db.savepoint('incompatible_native_currency_defaults')
+        with self.assertRaises(frappe.ValidationError):
+            incompatible_native.insert()
+        frappe.db.rollback(save_point='incompatible_native_currency_defaults')
+        self.assertEqual(incompatible_native.currency, 'INR')
+        self.assertIsNone(incompatible_native.selling_price_list)
+        self.assertIsNone(incompatible_native.bank_receiving_account)
+        self.assertIsNone(incompatible_native.cash_receiving_account)
+
+        # An intentional USD deal with a coherent explicit bundle stays intact.
+        explicit_usd = contract(customer=customer, insert=False, **(blank_fields | {
+            'currency': 'USD', 'conversion_rate': 1, 'selling_price_list': 'PZ Synthetic USD',
+            'bank_receiving_account': 'PZ Synthetic Bank - PZT',
+        }))
+        explicit_usd.insert()
+        self.assertEqual((explicit_usd.currency, explicit_usd.selling_price_list,
+            explicit_usd.bank_receiving_account), ('USD', 'PZ Synthetic USD', 'PZ Synthetic Bank - PZT'))
+
+        # A different-currency deal is allowed when its own bundle is coherent;
+        # the USD defaults are not mixed into its optional receiving instructions.
+        explicit_eur = contract(customer=customer, insert=False, **(blank_fields | {
+            'currency': 'EUR', 'conversion_rate': 1.2, 'selling_price_list': eur_list,
+            'bank_receiving_account': None, 'cash_receiving_account': None,
+        }))
+        explicit_eur.insert()
+        self.assertEqual((explicit_eur.currency, explicit_eur.selling_price_list), ('EUR', eur_list))
+        self.assertIsNone(explicit_eur.bank_receiving_account)
+        mismatched_eur = contract(customer=customer, insert=False, **(blank_fields | {
+            'currency': 'EUR', 'conversion_rate': 1.2, 'selling_price_list': 'PZ Synthetic USD',
+            'bank_receiving_account': None, 'cash_receiving_account': None,
+        }))
+        frappe.db.savepoint('mismatched_eur_currency_defaults')
+        with self.assertRaises(frappe.ValidationError):
+            mismatched_eur.insert()
+        frappe.db.rollback(save_point='mismatched_eur_currency_defaults')
+        self.assertEqual(mismatched_eur.currency, 'EUR')
+        self.assertEqual(mismatched_eur.selling_price_list, 'PZ Synthetic USD')
+
+        # Restore an aligned setup for the later snapshot-change assertions.
+        settings.currency = 'INR'
+        settings.conversion_rate = 130
+        settings.selling_price_list = inr_list
+        settings.bank_receiving_account = inr_bank
+        settings.cash_receiving_account = inr_cash
+        settings.account_iban = 'INR / SYNTHETIC-NOT-AN-ACCOUNT'
+        settings.save()
 
         saved_law = doc.governing_law
         settings.governing_law = 'Synthetic changed setting — not a contract amendment'

@@ -116,6 +116,17 @@ class TestContractFormDefinition(unittest.TestCase):
         self.assertIn('self._apply_company_defaults()', self.controller)
         self.assertIn('def _apply_company_defaults(self):', self.controller)
         self.assertIn('if self.amended_from or not self.company:', self.controller)
+        set_defaults = re.search(r"    def _set_defaults\(self\):(.*?)\n    def before_insert", self.controller, re.S)
+        self.assertIsNotNone(set_defaults)
+        self.assertIn('if self.is_new() and self.amended_from:', set_defaults.group(1))
+        self.assertLess(set_defaults.group(1).index('initially_blank[fieldname] = value'), set_defaults.group(1).index('super()._set_defaults()'))
+        self.assertIn('for fieldname, value in initially_blank.items():', set_defaults.group(1))
+        self.assertIn('self.set(fieldname, value)', set_defaults.group(1))
+        self.assertIn('CURRENCY_DEPENDENT_DEFAULT_FIELDS = frozenset({', self.controller)
+        self.assertIn('if fieldname in CURRENCY_DEPENDENT_DEFAULT_FIELDS and not currency_matches:', self.controller)
+        self.assertIn('currency_matches = bool(configured_currency)', self.controller)
+        currency_field = next(field for field in self.contract["fields"] if field["fieldname"] == "currency")
+        self.assertIn("never replaces a nonblank currency", currency_field["description"])
         self.assertLess(
             self.controller.index('self._apply_company_defaults()'),
             self.controller.index("frappe.db.sql('SELECT name FROM `tabCustomer`"),
@@ -131,6 +142,13 @@ class TestContractFormDefinition(unittest.TestCase):
         self.assertIn('if (exists) frappe.set_route("Form", "PZ Contract Defaults", company);', self.javascript)
         self.assertIn('else frappe.new_doc("PZ Contract Defaults", { company });', self.javascript)
         self.assertIn('const clear = Object.fromEntries([...companyDefaultFields, "seller_address_display"].map((fieldname) => [fieldname, null]));', self.javascript)
+        self.assertIn('const currencyCompatible = !isMissingValue("currency", configured.currency)', self.javascript)
+        self.assertIn('if (currencyDependentFields.includes(fieldname) && !currencyCompatible) continue;', self.javascript)
+        self.assertIn('Choose a matching currency, price list, exchange rate and accounts.', self.javascript)
+        self.assertIn('frm._pzCompanyDefaultsCurrencyMismatchFor === frm.doc.company', self.javascript)
+        self.assertIn('frm.doc.currency === frm._pzCompanyDefaultsConfiguredCurrency', self.javascript)
+        self.assertIn('loadCompanyDefaults(frm, frm.doc.company);', self.javascript)
+        self.assertNotIn('isUntouchedGenericDefault', self.javascript)
         self.assertIn('const initialZeroGrace = fieldname === "collection_grace"', self.javascript)
         self.assertIn('frm._pzCollectionGraceTouchedCompany !== company', self.javascript)
         self.assertIn('frm._pzCollectionGraceTouchedCompany = frm.doc.company;', self.javascript)
@@ -140,6 +158,18 @@ class TestContractFormDefinition(unittest.TestCase):
             self.javascript,
             r"const companyDefaultFields = \[([^\]]*)\]",
         ))
+
+    def test_currency_defaults_are_copied_only_as_a_compatible_bundle(self):
+        self.assertIn("'selling_price_list',", self.controller)
+        self.assertIn("'bank_receiving_account',", self.controller)
+        self.assertIn("'cash_receiving_account',", self.controller)
+        self.assertIn("'beneficiary',", self.controller)
+        self.assertIn("'account_iban',", self.controller)
+        self.assertIn('contract_currency = self.get(\'currency\')', self.controller)
+        self.assertIn('not contract_currency or contract_currency == configured_currency', self.controller)
+        self.assertIn('const currencyDependentFields = [', self.javascript)
+        self.assertIn('frm.doc.currency === configured.currency', self.javascript)
+        self.assertIn('if ((isMissingValue(fieldname, frm.doc[fieldname])', self.javascript)
 
     def test_specific_company_and_customer_handlers_override_checklist_refresh(self):
         form_handler = re.search(

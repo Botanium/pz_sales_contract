@@ -32,6 +32,8 @@ The supplied 30%/70% percentages are fixed because both the master’s legal cla
 
 A System Manager may maintain one **PZ Contract Defaults** record per seller Company. Enter only company details and standard legal or operational terms that have been approved for reuse; this setup is empty by default and does not invent commercial values. Defaults are copied server-side into **blank fields on a new, non-amendment contract only**. Deal-specific customer and product data, quantity, rate, Incoterm, named place, specification, discount and taxes are never defaulted. Sales may change a copied value for an individual deal; each contract is validated by the existing link, currency, account and schedule checks.
 
+Currency, exchange rate, selling price list and receiving-account instructions are copied as a compatible bundle only when the contract currency is blank or matches the configured Company currency. A nonblank native or user-selected currency is never switched to match a profile; when the currencies differ, select a matching currency and enter matching commercial/payment values (or update the approved Company defaults) before saving.
+
 If no defaults record exists, the original explicit-entry workflow remains available and all required contract fields remain required. Changing Company on a new form clears the previous Company's seller address, signatory, currency, accounts and terms before loading the newly selected Company's defaults. Each saved contract is self-contained: changing a defaults record later does not rewrite an existing draft, submitted contract, print or Sales Order. Defaults do not change the first-family DRAFT policy, payment evidence, roles or permissions.
 
 ## Installation (administrator action)

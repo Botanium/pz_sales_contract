@@ -197,11 +197,38 @@ function loadCompanyDefaults(frm, expectedCompany, requestId) {
       frm._pzCompanyDefaultsLoadedFor = company;
       const configured = response.message || {};
       const values = {};
+      const currencyDependentFields = [
+        "conversion_rate",
+        "selling_price_list",
+        "bank_receiving_account",
+        "cash_receiving_account",
+        "beneficiary",
+        "bank_branch",
+        "account_iban",
+        "swift_reference",
+      ];
+      const currencyCompatible = !isMissingValue("currency", configured.currency)
+        && (isMissingValue("currency", frm.doc.currency) || frm.doc.currency === configured.currency);
+      frm._pzCompanyDefaultsCurrencyMismatchFor = currencyCompatible ? null : company;
+      frm._pzCompanyDefaultsConfiguredCurrency = configured.currency || null;
+      const hasCurrencyDependentDefaults = currencyDependentFields.some(
+        (fieldname) => !isMissingValue(fieldname, configured[fieldname])
+      );
+      if (hasCurrencyDependentDefaults && !currencyCompatible) {
+        frappe.show_alert({
+          message: configured.currency && frm.doc.currency
+            ? __("Company defaults use {0}, but this contract uses {1}. Matching price-list, exchange-rate and receiving-account defaults were not copied. Choose a matching currency, price list, exchange rate and accounts.", [configured.currency, frm.doc.currency])
+            : __("Company defaults need a currency before matching price-list, exchange-rate and receiving-account values can be copied. Choose a matching currency, price list, exchange rate and accounts."),
+          indicator: "orange",
+        });
+      }
       for (const fieldname of companyDefaultFields) {
+        if (currencyDependentFields.includes(fieldname) && !currencyCompatible) continue;
         const initialZeroGrace = fieldname === "collection_grace"
           && Number(frm.doc[fieldname]) === 0
           && frm._pzCollectionGraceTouchedCompany !== company;
-        if ((isMissingValue(fieldname, frm.doc[fieldname]) || initialZeroGrace)
+        if ((isMissingValue(fieldname, frm.doc[fieldname])
+          || (fieldname === "collection_grace" && initialZeroGrace))
           && !isMissingValue(fieldname, configured[fieldname])) {
           values[fieldname] = configured[fieldname];
         }
@@ -235,6 +262,8 @@ function clearCompanySpecificValues(frm) {
   frm._pzCompanyDefaultsRequestId = requestId;
   frm._pzCompanyDefaultsLoadedFor = null;
   frm._pzCompanyDefaultsRequestedFor = null;
+  frm._pzCompanyDefaultsCurrencyMismatchFor = null;
+  frm._pzCompanyDefaultsConfiguredCurrency = null;
   const company = frm.doc.company;
   const clear = Object.fromEntries([...companyDefaultFields, "seller_address_display"].map((fieldname) => [fieldname, null]));
   frm._pzCollectionGraceTouchedCompany = null;
@@ -254,7 +283,7 @@ function clearCompanySpecificValues(frm) {
 function registerChecklistEvents() {
   const fields = requiredChecklistGroups.flatMap((group) => group.fields || []);
   for (const group of requiredChecklistGroups) if (group.table) fields.push(group.table);
-  fields.push("customer", "company");
+  fields.push("customer", "company", ...companyDefaultFields);
   return Object.fromEntries([...new Set(fields)].map((fieldname) => [fieldname, (frm) => renderDailyChecklist(frm)]));
 }
 
@@ -305,6 +334,18 @@ frappe.ui.form.on("PZ Sales Contract", {
     if (previousCompany && previousCompany !== currentCompany) clearCompanySpecificValues(frm);
     else loadCompanyDefaults(frm, currentCompany);
     renderDailyChecklist(frm);
+  },
+  currency(frm) {
+    renderDailyChecklist(frm);
+    if (frm.is_new() && !frm.doc.amended_from
+      && frm.doc.company
+      && frm._pzCompanyDefaultsCurrencyMismatchFor === frm.doc.company
+      && frm.doc.currency === frm._pzCompanyDefaultsConfiguredCurrency) {
+      frm._pzCompanyDefaultsCurrencyMismatchFor = null;
+      frm._pzCompanyDefaultsLoadedFor = null;
+      frm._pzCompanyDefaultsRequestedFor = null;
+      loadCompanyDefaults(frm, frm.doc.company);
+    }
   },
   collection_grace(frm) {
     if (!frm._pzApplyingCompanyDefaults && !frm._pzClearingCompanySpecificValues && frm.doc.company) {

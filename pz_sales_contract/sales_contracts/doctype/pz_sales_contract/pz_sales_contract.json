@@ -217,7 +217,7 @@
       "fieldtype": "Link",
       "options": "Currency",
       "reqd": 1,
-      "description": "A configured company default is only a starting value; confirm the currency and exchange rate for this deal."
+      "description": "A Company default fills this only when blank and never replaces a nonblank currency. Rate, price list and receiving-account defaults load only when currencies match; enter a coherent bundle for this deal."
     },
     {
       "fieldname": "conversion_rate",

@@ -10,8 +10,36 @@ from pz_sales_contract.sales_contracts.doctype.pz_contract_defaults.pz_contract_
     COMPANY_DEFAULT_FIELDS,
 )
 
+CURRENCY_DEPENDENT_DEFAULT_FIELDS = frozenset({
+    'conversion_rate',
+    'selling_price_list',
+    'bank_receiving_account',
+    'cash_receiving_account',
+    'beneficiary',
+    'bank_branch',
+    'account_iban',
+    'swift_reference',
+})
+
 
 class PZSalesContract(Document):
+    def _set_defaults(self):
+        # Frappe may apply generic user defaults while an amendment is created.
+        # Restore blank agreement values so creating an amendment never rewrites
+        # the cancelled contract from current user defaults.
+        initially_blank = {}
+        if self.is_new() and self.amended_from:
+            for fieldname in COMPANY_DEFAULT_FIELDS:
+                value = self.get(fieldname)
+                if value in (None, '') or (fieldname == 'conversion_rate' and value == 0):
+                    initially_blank[fieldname] = value
+
+        super()._set_defaults()
+
+        if self.amended_from:
+            for fieldname, value in initially_blank.items():
+                self.set(fieldname, value)
+
     def before_insert(self):
         self._apply_company_defaults()
         # Customer row lock serialises simultaneous first inserts across all companies.
@@ -45,7 +73,17 @@ class PZSalesContract(Document):
         )
         if not defaults:
             return
+        # Currency, exchange rate, price list and receiving instructions form one
+        # compatibility bundle. Never let a seller's USD bundle become a partial
+        # mismatch on a contract whose native/user currency is already INR.
+        configured_currency = defaults.get('currency')
+        contract_currency = self.get('currency')
+        currency_matches = bool(configured_currency) and (
+            not contract_currency or contract_currency == configured_currency
+        )
         for fieldname in COMPANY_DEFAULT_FIELDS:
+            if fieldname in CURRENCY_DEPENDENT_DEFAULT_FIELDS and not currency_matches:
+                continue
             blank = self.get(fieldname) in (None, '') or (
                 fieldname == 'conversion_rate' and self.get(fieldname) == 0
             )
