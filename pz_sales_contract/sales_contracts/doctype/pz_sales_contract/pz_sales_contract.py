@@ -28,13 +28,20 @@ class PZSalesContract(Document):
         # Restore blank agreement values so creating an amendment never rewrites
         # the cancelled contract from current user defaults.
         initially_blank = {}
+        initially_blank_currency_dependent = set()
         if self.is_new() and self.amended_from:
             for fieldname in COMPANY_DEFAULT_FIELDS:
                 value = self.get(fieldname)
                 if value in (None, '') or (fieldname == 'conversion_rate' and value == 0):
                     initially_blank[fieldname] = value
+        elif self.is_new():
+            for fieldname in CURRENCY_DEPENDENT_DEFAULT_FIELDS:
+                value = self.get(fieldname)
+                if value in (None, '') or (fieldname == 'conversion_rate' and value == 0):
+                    initially_blank_currency_dependent.add(fieldname)
 
         super()._set_defaults()
+        self._pz_initially_blank_currency_dependent_defaults = initially_blank_currency_dependent
 
         if self.amended_from:
             for fieldname, value in initially_blank.items():
@@ -77,13 +84,81 @@ class PZSalesContract(Document):
         # compatibility bundle. Never let a seller's USD bundle become a partial
         # mismatch on a contract whose native/user currency is already INR.
         configured_currency = defaults.get('currency')
+        if not self.get('currency') and configured_currency:
+            self.currency = configured_currency
         contract_currency = self.get('currency')
-        currency_matches = bool(configured_currency) and (
-            not contract_currency or contract_currency == configured_currency
+        currency_matches = bool(configured_currency) and contract_currency == configured_currency
+        initially_blank = getattr(self, '_pz_initially_blank_currency_dependent_defaults', set())
+        configured_bundle = any(
+            defaults.get(fieldname) not in (None, '')
+            and not (fieldname == 'conversion_rate' and defaults.get(fieldname) == 0)
+            for fieldname in CURRENCY_DEPENDENT_DEFAULT_FIELDS
         )
+
+        def compatible_injected_value(fieldname, value):
+            if not value or not contract_currency:
+                return True
+            if fieldname == 'selling_price_list':
+                price_list = frappe.db.get_value(
+                    'Price List', value, ['currency', 'enabled', 'selling'], as_dict=True
+                )
+                return bool(
+                    price_list and price_list.currency == contract_currency
+                    and price_list.enabled and price_list.selling
+                )
+            if fieldname in {'bank_receiving_account', 'cash_receiving_account'}:
+                account = frappe.db.get_value(
+                    'Account', value,
+                    ['company', 'account_type', 'is_group', 'disabled', 'account_currency'],
+                    as_dict=True,
+                )
+                account_currency = (account.account_currency if account else None) or frappe.db.get_value(
+                    'Company', self.company, 'default_currency'
+                )
+                expected_kind = 'Bank' if fieldname == 'bank_receiving_account' else 'Cash'
+                return bool(
+                    account and account.company == self.company and account.account_type == expected_kind
+                    and not account.is_group and not account.disabled and account_currency == contract_currency
+                )
+            return True
+
+        # A generic Frappe default may have filled a dependent field after the
+        # input was constructed. It is replaceable only when that input field
+        # was blank. Explicit link values stay authoritative and are validated.
+        explicit_dependency_conflict = False
+        if configured_bundle and currency_matches:
+            for fieldname in CURRENCY_DEPENDENT_DEFAULT_FIELDS - initially_blank:
+                value = self.get(fieldname)
+                if not value or fieldname == 'conversion_rate':
+                    continue
+                if fieldname in {'selling_price_list', 'bank_receiving_account', 'cash_receiving_account'} \
+                    and not compatible_injected_value(fieldname, value):
+                    explicit_dependency_conflict = True
+                    break
+
+        if configured_bundle and (not currency_matches or explicit_dependency_conflict):
+            # Do not retain unrelated generic FX/list/account defaults beside
+            # a mismatched configured bundle. Only values captured as blank
+            # input are cleared; explicit payload values are left for strict
+            # validation to accept or reject.
+            for fieldname in initially_blank:
+                self.set(fieldname, None)
+
         for fieldname in COMPANY_DEFAULT_FIELDS:
-            if fieldname in CURRENCY_DEPENDENT_DEFAULT_FIELDS and not currency_matches:
-                continue
+            if fieldname in CURRENCY_DEPENDENT_DEFAULT_FIELDS:
+                if not configured_bundle:
+                    continue
+                if not currency_matches or explicit_dependency_conflict:
+                    continue
+                if fieldname in initially_blank:
+                    configured_value = defaults.get(fieldname)
+                    if fieldname == 'conversion_rate' and configured_value == 0:
+                        configured_value = None
+                    if configured_value not in (None, ''):
+                        self.set(fieldname, configured_value)
+                    elif not compatible_injected_value(fieldname, self.get(fieldname)):
+                        self.set(fieldname, None)
+                    continue
             blank = self.get(fieldname) in (None, '') or (
                 fieldname == 'conversion_rate' and self.get(fieldname) == 0
             )

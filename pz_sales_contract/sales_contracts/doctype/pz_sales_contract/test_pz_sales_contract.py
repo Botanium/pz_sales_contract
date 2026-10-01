@@ -154,6 +154,30 @@ class TestPZSalesContract(IntegrationTestCase):
                     actual, expected = get_timedelta(actual), get_timedelta(expected)
                 self.assertEqual(actual, expected, fieldname)
 
+        # Explicit currency-incompatible price lists/accounts are never
+        # overwritten or accompanied by a partially copied profile bundle.
+        explicit_bad_list = contract(customer=customer, insert=False, **(blank_fields | {
+            'currency': 'INR', 'conversion_rate': 130, 'selling_price_list': 'PZ Synthetic USD',
+        }))
+        frappe.db.savepoint('explicit_bad_list_company_defaults')
+        with self.assertRaises(frappe.ValidationError):
+            explicit_bad_list.insert()
+        frappe.db.rollback(save_point='explicit_bad_list_company_defaults')
+        self.assertEqual(explicit_bad_list.selling_price_list, 'PZ Synthetic USD')
+        self.assertEqual(explicit_bad_list.conversion_rate, 130)
+        self.assertIsNone(explicit_bad_list.bank_receiving_account)
+
+        explicit_bad_account = contract(customer=customer, insert=False, **(blank_fields | {
+            'currency': 'INR', 'conversion_rate': 130, 'selling_price_list': inr_list,
+            'bank_receiving_account': 'PZ Synthetic Bank - PZT',
+        }))
+        frappe.db.savepoint('explicit_bad_account_company_defaults')
+        with self.assertRaises(frappe.ValidationError):
+            explicit_bad_account.insert()
+        frappe.db.rollback(save_point='explicit_bad_account_company_defaults')
+        self.assertEqual(explicit_bad_account.bank_receiving_account, 'PZ Synthetic Bank - PZT')
+        self.assertIsNone(explicit_bad_account.cash_receiving_account)
+
         # A different native currency must not receive a partial INR bundle.
         settings.currency = 'USD'
         settings.conversion_rate = 1
@@ -225,6 +249,39 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertEqual(later.currency, settings.currency)
         self.assertEqual(later.selling_price_list, settings.selling_price_list)
         self.assertEqual(later.governing_law, settings.governing_law)
+
+        # A legal-only profile fills legal blanks but leaves native Frappe
+        # currency-dependent defaults byte-for-byte unchanged.
+        from frappe.model.document import Document
+
+        saved_profile = {fieldname: settings.get(fieldname) for fieldname in COMPANY_DEFAULT_FIELDS}
+        for fieldname in (
+            'currency', 'conversion_rate', 'selling_price_list',
+            'bank_receiving_account', 'cash_receiving_account',
+            'beneficiary', 'bank_branch', 'account_iban', 'swift_reference',
+        ):
+            settings.set(fieldname, None)
+        settings.save()
+        initial = dict(doctype='PZ Sales Contract', company=COMPANY)
+        native_defaults = frappe.get_doc(initial)
+        Document._set_defaults(native_defaults)
+        legal_only = frappe.get_doc(initial)
+        Document._set_defaults(legal_only)
+        dependent_before = {
+            fieldname: native_defaults.get(fieldname)
+            for fieldname in (
+                'currency', 'conversion_rate', 'selling_price_list',
+                'bank_receiving_account', 'cash_receiving_account',
+                'beneficiary', 'bank_branch', 'account_iban', 'swift_reference',
+            )
+        }
+        legal_only._apply_company_defaults()
+        for fieldname, value in dependent_before.items():
+            self.assertEqual(legal_only.get(fieldname), value, fieldname)
+        self.assertEqual(legal_only.seller_signatory, saved_profile['seller_signatory'])
+        for fieldname, value in saved_profile.items():
+            settings.set(fieldname, value)
+        settings.save()
 
     def test_company_defaults_links_currency_and_accounts_fail_closed(self):
         from pz_sales_contract.testing import new_customer
