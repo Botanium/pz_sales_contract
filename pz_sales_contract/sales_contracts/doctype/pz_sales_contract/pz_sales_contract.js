@@ -93,8 +93,12 @@ function isCurrentDefaultsRequest(frm, doc, company, requestId) {
 async function setCurrentDocumentValues(frm, values, isCurrent, didSet = () => {}) {
   // set_value(object) runs field events asynchronously. Recheck before every
   // field so navigating during an event cannot write into the next document.
+  const doc = frm.doc;
+  const before = Object.fromEntries(Object.keys(values).map((fieldname) => [fieldname, doc[fieldname]]));
   for (const [fieldname, value] of Object.entries(values)) {
     if (!isCurrent()) return;
+    // A user can edit a later field while an earlier Link event awaits AJAX.
+    if (doc[fieldname] !== before[fieldname]) continue;
     await frm.set_value(fieldname, value);
     didSet(fieldname, value);
   }
@@ -242,6 +246,18 @@ function isUntouchedFrameworkCurrencyDefault(frm, fieldname) {
     && String(frm.doc[fieldname]) === String(field.df.__default_value);
 }
 
+function reconcileCopiedCompanyDefaults(frm) {
+  if (!frm.is_new() || frm.doc.amended_from) return;
+  if (frm._pzCompanyDefaultsConfiguredCurrency
+    && frm.doc.currency !== frm._pzCompanyDefaultsConfiguredCurrency) {
+    return clearCopiedCurrencyDefaults(frm);
+  }
+  if (frm._pzCompanyDefaultsConfiguredBank
+    && frm.doc.bank_receiving_account !== frm._pzCompanyDefaultsConfiguredBank) {
+    return clearCopiedCurrencyDefaults(frm, bankInstructionDefaultFields);
+  }
+}
+
 function missingItemFields(row) {
   const required = ["item_code", "grade", "packaging", "qty", "uom", "rate", "specification_reference"];
   return required.filter((fieldname) => {
@@ -385,6 +401,7 @@ function loadCompanyDefaults(frm, expectedCompany, requestId) {
         }).then(() => {
           if (!isCurrent()) return;
           frm._pzApplyingCompanyDefaults = false;
+          reconcileCopiedCompanyDefaults(frm);
           renderDailyChecklist(frm);
         }, () => {
           if (!isCurrent()) return;
@@ -465,7 +482,11 @@ frappe.ui.form.on("PZ Sales Contract", {
     ensureCompanyDefaultsDocument(frm);
     frm.set_intro("The first contract family saved using this app carries DRAFT until the full 30% advance has qualifying bank reconciliation or agreed cash receipt evidence. Finance can register verified prior contracts through PZ Customer History. ERP submission is separate. Save before printing.");
     renderDailyChecklist(frm);
-    if (frm.is_new() && !frm.doc.amended_from && frm.doc.company) loadCompanyDefaults(frm);
+    const doc = frm.doc;
+    Promise.resolve(reconcileCopiedCompanyDefaults(frm)).then(() => {
+      if (frm.doc !== doc) return;
+      if (frm.is_new() && !frm.doc.amended_from && frm.doc.company) loadCompanyDefaults(frm);
+    });
     if (frm.is_new() && !frm.doc.amended_from && frm.doc.company && frappe.user.has_role("System Manager")) {
       frm.add_custom_button("Company Contract Defaults", () => {
         const company = frm.doc.company;

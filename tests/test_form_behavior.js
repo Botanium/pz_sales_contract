@@ -196,3 +196,35 @@ test("native prefilled or duplicated documents preserve explicit zero and generi
   assert.equal(ui.frm.doc.selling_price_list, "Generic Prices");
   assert.equal(ui.frm.doc.seller_signatory, profile.seller_signatory);
 });
+
+test("returning finishes interrupted clearing of the previous bank instructions", async () => {
+  const ui = desk(); await ui.refresh(); await ui.respond();
+  const first = ui.frm.doc;
+  ui.frm.afterSet = (fieldname) => {
+    if (fieldname === "beneficiary" && first.beneficiary === null) {
+      ui.frm.afterSet = null;
+      ui.frm.doc = newDoc("second"); ui.events.refresh(ui.frm);
+    }
+  };
+  await ui.frm.set_value("bank_receiving_account", "Bank B"); await flush();
+  await ui.respond(1);
+  ui.frm.doc = first; await ui.refresh();
+  if (ui.requests.length > 2) await ui.respond();
+  for (const field of ["beneficiary", "bank_branch", "account_iban", "swift_reference"])
+    assert.equal(first[field], null, field);
+});
+
+test("edits made while defaults are applying remain authoritative", async () => {
+  const ui = desk(); await ui.refresh();
+  ui.frm.afterSet = async (fieldname) => {
+    if (fieldname === "seller_signatory") {
+      ui.frm.afterSet = null;
+      await ui.frm.set_value("bank_receiving_account", "Bank B");
+      await ui.frm.set_value("beneficiary", "Verified Beneficiary B");
+    }
+  };
+  await ui.respond();
+  assert.equal(ui.frm.doc.bank_receiving_account, "Bank B");
+  assert.equal(ui.frm.doc.beneficiary, "Verified Beneficiary B");
+  assert.equal(ui.frm.doc.account_iban, null);
+});
