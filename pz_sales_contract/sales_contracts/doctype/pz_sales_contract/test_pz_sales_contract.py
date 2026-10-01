@@ -46,6 +46,38 @@ class TestPZSalesContract(IntegrationTestCase):
         with self.assertRaises(frappe.ValidationError):
             first.save()
 
+    def test_print_and_payment_evidence_respect_native_currency_precision(self):
+        from bs4 import BeautifulSoup
+        previous=frappe.defaults.get_global_default('currency_precision')
+        try:
+            for digits,rate,total,required,partial,shortfall,balance in [
+                (2,100.12,300.36,90.11,90.10,0.01,210.25),
+                (3,100.125,300.375,90.113,90.112,0.001,210.262)]:
+                with self.subTest(currency_precision=digits):
+                    frappe.defaults.set_global_default('currency_precision',str(digits))
+                    d=contract(submit=True,items=[dict(item_code='PZ Synthetic Bitumen',qty=3,uom='Nos',
+                        rate=rate,grade='60/70',packaging='Synthetic drums',specification_reference='Synthetic precision QA')])
+                    self.assertEqual((d.grand_total,d.advance_required),(total,required))
+                    self.assertEqual(frappe.db.get_value('Sales Order',d.sales_order,'grand_total'),total)
+                    receipt(d,partial,cash=True)
+                    self.assertTrue(payment_status(d).payment_draft)
+                    soup=BeautifulSoup(frappe.get_print(d.doctype,d.name,print_format='Standard'),'html.parser')
+                    row=soup.select('.contract section')[0].select('table')[1].select('tbody tr')[0]
+                    self.assertEqual([c.get_text(strip=True) for c in row.select('td')][5:],
+                        [f'{rate:.{digits}f}',f'{total:.{digits}f}'])
+                    totals={r.select('td')[0].get_text(strip=True):r.select('td')[1].get_text(strip=True)
+                        for r in soup.select('.totals tr')}
+                    for key,value in [('Subtotal',total),('Total · USD',total),('30% advance',required),('70% balance',balance)]:
+                        self.assertEqual(totals[key],f'{value:.{digits}f}')
+                    self.assertIn(f'30% advance: {required:.{digits}f}',soup.get_text())
+                    self.assertIn(f'Confirmed receipt allocation: {partial:.{digits}f}',soup.get_text())
+                    status=get_status(d.name)
+                    self.assertEqual((status.currency_precision,status.required,status.confirmed),(digits,required,partial))
+                    receipt(d,shortfall,cash=True)
+                    self.assertFalse(payment_status(d).payment_draft)
+        finally:
+            frappe.defaults.set_global_default('currency_precision',previous)
+
     def test_bank_draft_manual_date_partial_threshold_and_cancellation(self):
         d=contract(submit=True)
         draft=receipt(d,50,submit=False)

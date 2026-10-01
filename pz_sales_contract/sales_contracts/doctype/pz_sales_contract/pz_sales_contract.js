@@ -13,7 +13,7 @@ frappe.ui.form.on("PZ Sales Contract", {
     if (!frm.is_new()) frm.add_custom_button("Advance evidence", () => {
       frappe.call({method: "pz_sales_contract.payments.get_status", args: {name: frm.doc.name}, callback(r) {
         const s = r.message;
-        frappe.msgprint({title: "Server payment evidence", message: `${s.payment_draft ? "DRAFT — advance pending" : "Advance confirmed / established or later contract"}<br>Confirmed receipt allocation: ${format_currency(s.confirmed, frm.doc.currency, 2)}<br>Required advance: ${format_currency(s.required, frm.doc.currency, 2)}<br>ERP status: ${["Unsubmitted", "Submitted", "Cancelled"][frm.doc.docstatus]}`});
+        frappe.msgprint({title: "Server payment evidence", message: `${s.payment_draft ? "DRAFT — advance pending" : "Advance confirmed / established or later contract"}<br>Confirmed receipt allocation: ${format_currency(s.confirmed, frm.doc.currency, s.currency_precision)}<br>Required advance: ${format_currency(s.required, frm.doc.currency, s.currency_precision)}<br>ERP status: ${["Unsubmitted", "Submitted", "Cancelled"][frm.doc.docstatus]}`});
       }});
     });
   },

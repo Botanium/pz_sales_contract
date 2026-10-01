@@ -1,9 +1,9 @@
 {% macro header(section) %}
 <div class="masthead"><img src="{{ logo }}"><div><strong>PETROL ZONE</strong><span>SALES CONTRACT · {{ section }}</span></div><div class="reference">{{ doc.name|e }}<br>{{ doc.transaction_date|e }}</div></div>
 {% if doc.docstatus == 2 %}<div class="draft cancelled">CANCELLED CONTRACT</div>{% elif state.payment_draft %}<div class="draft">DRAFT — FIRST ADVANCE NOT CONFIRMED</div>{% endif %}
-<div class="status">{{ "Established customer · finance history verified" if state.established_history else ("First contract family" if state.first_contract else "Returning customer · later contract") }} · ERP document: {{ erp_status|e }} · Currency: {{ doc.currency|e }} · 30% advance: {{ '%.2f'|format(doc.advance_required) }} · Confirmed receipt allocation: {{ '%.2f'|format(state.confirmed) }}</div>
+<div class="status">{{ "Established customer · finance history verified" if state.established_history else ("First contract family" if state.first_contract else "Returning customer · later contract") }} · ERP document: {{ erp_status|e }} · Currency: {{ doc.currency|e }} · 30% advance: {{ money(doc.advance_required, state.currency_precision) }} · Confirmed receipt allocation: {{ money(state.confirmed, state.currency_precision) }}</div>
 {% endmacro %}
-{% macro money(n) %}{{ '{:,.2f}'.format(n or 0) }}{% endmacro %}
+{% macro money(n, precision=doc.precision('grand_total')) %}{{ format_money(n or 0, precision=precision)|e }}{% endmacro %}
 <style>
 @page { size:A4; margin:16mm 14mm; }
 .print-format { font-family:Arial,sans-serif; color:#222; font-size:9.5pt; padding:0!important; margin-top:18mm; margin-bottom:15mm; margin-left:14mm; margin-right:14mm; header-spacing:4; }
@@ -54,12 +54,12 @@
 <p>Petrol Zone Company (the Seller) agrees to sell, and the Customer named above (the Buyer) agrees to purchase the goods below on the completed commercial terms and conditions of this Contract.</p>
 <h2>Products and Price</h2>
 <table><thead><tr><th style="width:5%">No.</th><th style="width:29%">Product / packaging</th><th style="width:12%">Grade</th><th style="width:12%">Qty</th><th style="width:9%">UOM</th><th style="width:15%">Rate</th><th style="width:18%">Amount</th></tr></thead><tbody>
-{% for row in doc.items %}<tr><td>{{ loop.index }}</td><td>{{ row.item_name|e }}<br><span class="quiet">{{ row.item_code|e }} · {{ row.packaging|e }}</span></td><td>{{ row.grade|e }}</td><td class="num">{{ row.qty|e }}</td><td>{{ row.uom|e }}</td><td class="num">{{ money(row.rate) }}</td><td class="num">{{ money(row.amount) }}</td></tr>{% endfor %}
+{% for row in doc.items %}<tr><td>{{ loop.index }}</td><td>{{ row.item_name|e }}<br><span class="quiet">{{ row.item_code|e }} · {{ row.packaging|e }}</span></td><td>{{ row.grade|e }}</td><td class="num">{{ row.qty|e }}</td><td>{{ row.uom|e }}</td><td class="num">{{ money(row.rate, row.precision('rate')) }}</td><td class="num">{{ money(row.amount, row.precision('amount')) }}</td></tr>{% endfor %}
 </tbody></table>
-<table class="totals"><tr><td>Subtotal</td><td class="num">{{ money(doc.subtotal) }}</td></tr><tr><td>Discount</td><td class="num">{{ money(doc.discount_amount) }}</td></tr><tr><td>Taxes / charges</td><td class="num">{{ money(doc.tax_total) }}</td></tr><tr class="total"><td>Total · {{ doc.currency|e }}</td><td class="num">{{ money(doc.grand_total) }}</td></tr><tr><td>30% advance</td><td class="num">{{ money(doc.advance_required) }}</td></tr><tr><td>70% balance</td><td class="num">{{ money(doc.balance_required) }}</td></tr></table>
+<table class="totals"><tr><td>Subtotal</td><td class="num">{{ money(doc.subtotal, doc.precision('subtotal')) }}</td></tr><tr><td>Discount</td><td class="num">{{ money(doc.discount_amount, doc.precision('discount_amount')) }}</td></tr><tr><td>Taxes / charges</td><td class="num">{{ money(doc.tax_total, doc.precision('tax_total')) }}</td></tr><tr class="total"><td>Total · {{ doc.currency|e }}</td><td class="num">{{ money(doc.grand_total, doc.precision('grand_total')) }}</td></tr><tr><td>30% advance</td><td class="num">{{ money(doc.advance_required, doc.precision('advance_required')) }}</td></tr><tr><td>70% balance</td><td class="num">{{ money(doc.balance_required, doc.precision('balance_required')) }}</td></tr></table>
 <p><strong>Amount in words:</strong> {{ doc.in_words|e }}</p>
 <p class="quiet">Rate is per stated unit of measure. Line amount = Qty × Rate. Total = Subtotal − Discount + Taxes / charges. Quantities in different units are not combined.</p>
-{% if doc.taxes %}<h3>Identified taxes and charges</h3><table><thead><tr><th>Description</th><th>Basis</th><th>Rate / amount</th></tr></thead><tbody>{% for t in doc.taxes %}<tr><td>{{ t.description|e }}</td><td>{{ t.charge_type|e }}</td><td>{{ (t.rate or 0)|e }}% / {{ money(t.tax_amount_after_discount_amount) }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+{% if doc.taxes %}<h3>Identified taxes and charges</h3><table><thead><tr><th>Description</th><th>Basis</th><th>Rate / amount</th></tr></thead><tbody>{% for t in doc.taxes %}<tr><td>{{ t.description|e }}</td><td>{{ t.charge_type|e }}</td><td>{{ (t.rate or 0)|e }}% / {{ money(t.tax_amount_after_discount_amount, t.precision('tax_amount_after_discount_amount')) }}</td></tr>{% endfor %}</tbody></table>{% endif %}
 <p><strong>Incoterm:</strong> {{ doc.incoterm|e }} · <strong>Named place:</strong> {{ doc.named_place|e }}</p>
 </section>
 <section class="page">

@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 import frappe
+from frappe.utils import fmt_money
 from frappe.utils.pdf import pdf_body_html as default_body
 
 from pz_sales_contract.payments import payment_status
@@ -62,6 +63,7 @@ def pdf_body_html(template, args, **kwargs):
             seen.add(key)
             spec_items.append(row)
     context = dict(doc=doc, state=payment_status(doc), holiday=holiday, spec_items=spec_items,
+        format_money=fmt_money,
         clauses=json.loads((path/'terms.json').read_text()),
         logo='data:image/png;base64,'+base64.b64encode((path/'public/petrol_zone_logo.png').read_bytes()).decode(),
         erp_status=['Unsubmitted', 'Submitted', 'Cancelled'][int(doc.docstatus)])

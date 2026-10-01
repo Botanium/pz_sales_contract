@@ -105,7 +105,8 @@ def payment_status(doc):
     required = number(doc.advance_required)
     return frappe._dict(first_contract=first, established_history=historical,
         payment_draft=bool(first and (required <= 0 or confirmed < required)),
-        required=float(required), confirmed=float(confirmed), evidence=evidence)
+        required=float(required), confirmed=float(confirmed),
+        currency_precision=doc.precision('advance_required'), evidence=evidence)
 
 
 @frappe.whitelist()
