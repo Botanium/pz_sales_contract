@@ -12,3 +12,8 @@ User-authorized scope: implement, test and publish this dedicated app in public 
 - Native v16 integration in a disposable site with synthetic fixtures; permission, first/returning, draft/cancelled/submitted receipts, insufficient advances, cancellation, arithmetic and print/PDF tests. Verify exact remote commit and CI.
 
 The readable master SHA and transcription provenance are in master-provenance.md. README records implementation decisions and explicit limitations.
+
+## Approved access and merge follow-up (2026-10-01)
+
+- Use dedicated `PZ Sales Contract User` and `PZ Sales Contract Manager` roles. Generic Sales User, Sales Manager, Accounts Manager and System Manager roles must not expose contracts to incidental existing users. Administrator retains native full access. App roles do not grant native accounting, payment, finance-history or registry access, and installation/migration must not assign user roles.
+- Review the complete PR and merge through the normal GitHub flow after independent review and exact-head checks pass. Production installation and the explicitly approved user-role assignments are a separate deployment workflow; never create production contracts or transactions for validation.

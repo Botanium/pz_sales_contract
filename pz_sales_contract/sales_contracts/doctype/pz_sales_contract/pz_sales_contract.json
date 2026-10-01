@@ -556,7 +556,7 @@
   ],
   "permissions": [
     {
-      "role": "Sales User",
+      "role": "PZ Sales Contract User",
       "read": 1,
       "write": 1,
       "create": 1,
@@ -565,22 +565,7 @@
       "export": 0
     },
     {
-      "role": "Sales Manager",
-      "read": 1,
-      "write": 1,
-      "create": 1,
-      "submit": 1,
-      "cancel": 1,
-      "amend": 1,
-      "print": 1
-    },
-    {
-      "role": "Accounts Manager",
-      "read": 1,
-      "print": 1
-    },
-    {
-      "role": "System Manager",
+      "role": "PZ Sales Contract Manager",
       "read": 1,
       "write": 1,
       "create": 1,

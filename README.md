@@ -1,6 +1,6 @@
 # Petrol Zone Sales Contracts
 
-A dedicated Frappe app for ERPNext v16. Sales users choose ERP Customers, Addresses, Contacts, Items, UOMs and Incoterms; managers submit contracts and their linked native Sales Orders. The supplied branded master’s complete 15 clauses, product specifications, Commercial Schedule, payment instructions and signature areas appear in the print/PDF.
+A dedicated Frappe app for ERPNext v16. App users choose ERP Customers, Addresses, Contacts, Items, UOMs and Incoterms; app managers submit contracts and their linked native Sales Orders. The supplied branded master’s complete 15 clauses, product specifications, Commercial Schedule, payment instructions and signature areas appear in the print/PDF.
 
 ## Payment DRAFT policy
 
@@ -37,7 +37,9 @@ bench --site YOUR_SITE migrate
 bench build --app pz_sales_contract
 ```
 
-Requires Frappe/ERPNext `>=16,<17`, Python 3.14 and the bench wkhtmltopdf PDF engine. Use Sales User for create/read/print; Sales Manager **plus Sales User** for submission/cancellation/amendment and native master access; Accounts Manager for read/print. Submission also requires native Sales Order create/submit permission. The app grants no finance permissions. Configure Company selling defaults, accounts, price lists, master links, Incoterms and the agreed Holiday List in ERPNext. Enable draft print in native Print Settings if preliminary contracts must be printed.
+Requires Frappe/ERPNext `>=16,<17`, Python 3.14 and the bench wkhtmltopdf PDF engine. Installation creates **PZ Sales Contract User** (create/read/write/print) and **PZ Sales Contract Manager** (those operations plus submit/cancel/amend). Assign the appropriate app role explicitly to approved users; installation and migration do not assign roles to any user. Administrator retains native full access. Generic Sales User, Sales Manager, Accounts Manager and System Manager roles do not grant access to PZ Sales Contract.
+
+App roles grant no native Sales Order, master-data, payment, bank-reconciliation, finance-history or registry permissions. Reuse each approved user's existing native Sales Order create/submit/cancel and Customer/Company/Address/Contact/Item/Account read access; review any missing prerequisite separately. Finance history remains restricted to Accounts Manager/System Manager. Configure Company selling defaults, accounts, price lists, master links, Incoterms and the agreed Holiday List in ERPNext. Enable draft print in native Print Settings if preliminary contracts must be printed.
 
 All supported native contract print formats are routed through the mandatory app template with a freshly loaded persisted document. Native beta print builders, direct WeasyPrint downloads and the optional Chrome PDF renderer are explicitly rejected at configuration/request boundaries; scalar and dictionary batch requests are covered. Unsaved print payloads, client-supplied paid flags and alternate Standard formats cannot remove the marker from app-generated output. Other DocTypes retain Frappe’s ordinary print behavior.
 

@@ -154,6 +154,19 @@ class TestPZSalesContract(IntegrationTestCase):
         with self.assertRaises(frappe.ValidationError):
             frappe.delete_doc('PZ Sales Contract',d.name,ignore_permissions=True)
 
+    def test_generic_erp_roles_do_not_grant_contract_access(self):
+        users = {}
+        for index, role in enumerate(['Sales User', 'Sales Manager', 'Accounts Manager', 'System Manager']):
+            user = f'pz-generic-{index}@example.invalid'
+            frappe.get_doc(dict(doctype='User', email=user, first_name='Synthetic generic role',
+                send_welcome_email=0, roles=[dict(role=role)])).insert()
+            users[role] = user
+            for action in ['read', 'create', 'write', 'submit', 'cancel', 'amend', 'print']:
+                with self.subTest(user=user, action=action):
+                    self.assertFalse(frappe.has_permission('PZ Sales Contract', action, user=user))
+        # Unrelated native finance permissions must remain intact.
+        self.assertTrue(frappe.has_permission('PZ Customer History', 'create', user=users['Accounts Manager']))
+
     def test_permissions_sales_user_cannot_submit_pay_or_modify_registry(self):
         d=contract()
         frappe.set_user('pz-sales@example.invalid')
@@ -168,7 +181,11 @@ class TestPZSalesContract(IntegrationTestCase):
             d.submit()
         self.assertTrue(get_status(d.name).payment_draft)
         frappe.set_user('pz-manager@example.invalid')
-        self.assertTrue(frappe.has_permission('PZ Sales Contract','submit'))
+        for action in ['read', 'create', 'write', 'submit', 'cancel', 'amend', 'print']:
+            self.assertTrue(frappe.has_permission('PZ Sales Contract', action))
+        self.assertFalse(frappe.has_permission('PZ Customer History', 'create'))
+        self.assertFalse(frappe.has_permission('Payment Entry', 'submit'))
+        self.assertFalse(frappe.has_permission('PZ Contract Registry', 'write'))
         d.reload().submit()
         self.assertEqual(frappe.db.get_value('Sales Order',d.sales_order,'docstatus'),1)
 

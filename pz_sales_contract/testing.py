@@ -69,6 +69,10 @@ def setup_fixtures():
                 send_welcome_email=0,roles=[dict(role=role)])).insert()
         if role in ['Sales Manager','Accounts Manager']:
             frappe.get_doc('User',email).add_roles('Sales User')
+        if role == 'Sales User':
+            frappe.get_doc('User',email).add_roles('PZ Sales Contract User')
+        elif role == 'Sales Manager':
+            frappe.get_doc('User',email).add_roles('PZ Sales Contract Manager')
     return ba.name
 
 
