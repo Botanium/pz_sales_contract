@@ -13,6 +13,7 @@ from pz_sales_contract.sales_contracts.doctype.pz_contract_defaults.pz_contract_
 
 class PZSalesContract(Document):
     def before_insert(self):
+        self._apply_company_defaults()
         # Customer row lock serialises simultaneous first inserts across all companies.
         frappe.db.sql('SELECT name FROM `tabCustomer` WHERE name=%s FOR UPDATE', self.customer)
         if self.amended_from:
@@ -33,11 +34,11 @@ class PZSalesContract(Document):
             frappe.get_doc(dict(doctype='PZ Contract Registry', customer=self.customer,
                 first_family=self.first_family)).insert(ignore_permissions=True)
 
-    def before_validate(self):
+    def _apply_company_defaults(self):
         # Copy configured company values into blanks on creation only. The saved
         # contract remains its own snapshot if the defaults are changed later.
         # Amendments must preserve the cancelled agreement they replace.
-        if not self.flags.in_insert or self.amended_from or not self.company:
+        if self.amended_from or not self.company:
             return
         defaults = frappe.db.get_value(
             'PZ Contract Defaults', self.company, list(COMPANY_DEFAULT_FIELDS), as_dict=True
