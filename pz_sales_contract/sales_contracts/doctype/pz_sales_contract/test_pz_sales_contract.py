@@ -3,7 +3,7 @@ from pathlib import Path
 
 import frappe
 from frappe.tests import IntegrationTestCase
-from frappe.utils import today
+from frappe.utils import get_timedelta, today
 
 from pz_sales_contract.payments import payment_status, get_status
 from pz_sales_contract.testing import setup_fixtures, contract, receipt, refund, reconcile, new_customer, COMPANY
@@ -129,7 +129,10 @@ class TestPZSalesContract(IntegrationTestCase):
         for fieldname in COMPANY_DEFAULT_FIELDS:
             expected = overrides.get(fieldname, settings.get(fieldname))
             if expected is not None:
-                self.assertEqual(doc.get(fieldname), expected, fieldname)
+                actual = doc.get(fieldname)
+                if fieldname in ('opens_at', 'closes_at'):
+                    actual, expected = get_timedelta(actual), get_timedelta(expected)
+                self.assertEqual(actual, expected, fieldname)
 
         saved_law = doc.governing_law
         settings.governing_law = 'Synthetic changed setting — not a contract amendment'
