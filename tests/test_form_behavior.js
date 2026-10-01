@@ -146,3 +146,53 @@ test("an amendment never requests current company defaults", async () => {
   assert.equal(ui.requests.length, 0);
   assert.equal(ui.frm.doc.governing_law, "Original Terms");
 });
+
+test("returning to an unsaved contract preserves copied-bank provenance", async () => {
+  const ui = desk(); await ui.refresh(); await ui.respond();
+  const first = ui.frm.doc;
+  ui.frm.doc = newDoc("second"); await ui.refresh(); await ui.respond();
+  ui.frm.doc = first; await ui.refresh();
+  if (ui.requests.length > 2) await ui.respond();
+  await ui.frm.set_value("bank_receiving_account", "Bank B"); await flush();
+  assert.equal(first.account_iban, null);
+  assert.equal(first.bank_branch, null);
+});
+
+test("returning to an unsaved contract preserves deliberate generic-value overrides", async () => {
+  const ui = desk();
+  ui.frm.fields_dict.selling_price_list = { df: { __default_value: "Generic Prices" } };
+  await ui.refresh(); await ui.respond();
+  await ui.frm.set_value("selling_price_list", "Generic Prices");
+  const first = ui.frm.doc;
+  ui.frm.doc = newDoc("second"); await ui.refresh(); await ui.respond();
+  ui.frm.doc = first; await ui.refresh();
+  if (ui.requests.length > 2) await ui.respond();
+  assert.equal(first.selling_price_list, "Generic Prices");
+});
+
+test("partially applied defaults keep their provenance after navigating away and back", async () => {
+  const ui = desk(); await ui.refresh();
+  const first = ui.frm.doc;
+  ui.frm.afterSet = (fieldname) => {
+    if (fieldname === "account_iban") {
+      ui.frm.afterSet = null;
+      ui.frm.doc = newDoc("second"); ui.events.refresh(ui.frm);
+    }
+  };
+  await ui.respond(0); await ui.respond(1);
+  ui.frm.doc = first; await ui.refresh();
+  if (ui.requests.length > 2) await ui.respond();
+  await ui.frm.set_value("bank_receiving_account", "Bank B"); await flush();
+  assert.equal(first.account_iban, null);
+});
+
+test("native prefilled or duplicated documents preserve explicit zero and generic-value overrides", async () => {
+  const ui = desk(newDoc("prefilled", {
+    __run_link_triggers: false, collection_grace: 0, selling_price_list: "Generic Prices",
+  }));
+  ui.frm.fields_dict.selling_price_list = { df: { __default_value: "Generic Prices" } };
+  await ui.refresh(); await ui.respond(0, { ...profile, collection_grace: 48 });
+  assert.equal(ui.frm.doc.collection_grace, 0);
+  assert.equal(ui.frm.doc.selling_price_list, "Generic Prices");
+  assert.equal(ui.frm.doc.seller_signatory, profile.seller_signatory);
+});

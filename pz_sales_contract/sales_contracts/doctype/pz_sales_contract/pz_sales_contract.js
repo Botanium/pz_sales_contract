@@ -47,23 +47,40 @@ const currencyDependentDefaultFields = [
 const bankInstructionDefaultFields = ["beneficiary", "bank_branch", "account_iban", "swift_reference"];
 
 function ensureCompanyDefaultsDocument(frm) {
-  // Desk reuses one Form instance for every document of this DocType.
+  // Desk reuses one Form, including when revisiting cached unsaved documents.
   if (frm._pzCompanyDefaultsDocument === frm.doc) return;
+  const states = frm._pzCompanyDefaultsStates || (frm._pzCompanyDefaultsStates = new WeakMap());
+  const previous = states.get(frm._pzCompanyDefaultsDocument);
+  if (previous) {
+    for (const key of Object.keys(previous)) previous[key] = frm[key];
+    if (frm._pzApplyingCompanyDefaults || frm._pzClearingCompanySpecificValues) {
+      previous._pzCompanyDefaultsLoadedFor = null;
+    }
+  }
+  let state = states.get(frm.doc);
+  if (!state) {
+    state = {
+      _pzCompanyDefaultsLoadedFor: null,
+      _pzCompanyDefaultsCurrencyMismatchFor: null,
+      _pzCompanyDefaultsConfiguredCurrency: null,
+      _pzCompanyDefaultsConfiguredBank: null,
+      _pzCompanyDefaultsHasCurrencyDependentDefaults: false,
+      _pzCompanyDefaultsAppliedValues: {},
+      _pzCompanyDefaultTouchedFields: new Set(),
+      _pzCompanyDefaultObservedValues: Object.fromEntries(
+        currencyDependentDefaultFields.map((fieldname) => [fieldname, frm.doc[fieldname]])
+      ),
+      // Native Duplicate and Quick Entry mark their existing values as prefilled.
+      _pzCompanyDefaultsPrefilled: frm.doc.__run_link_triggers === false,
+      _pzCollectionGraceTouchedCompany: frm.doc.__run_link_triggers === false ? frm.doc.company : null,
+      _pzLastSelectedCompany: frm.doc.company || null,
+    };
+    states.set(frm.doc, state);
+  }
+  Object.assign(frm, state);
   frm._pzCompanyDefaultsDocument = frm.doc;
   frm._pzCompanyDefaultsRequestId = (frm._pzCompanyDefaultsRequestId || 0) + 1;
-  frm._pzCompanyDefaultsLoadedFor = null;
   frm._pzCompanyDefaultsRequestedFor = null;
-  frm._pzCompanyDefaultsCurrencyMismatchFor = null;
-  frm._pzCompanyDefaultsConfiguredCurrency = null;
-  frm._pzCompanyDefaultsConfiguredBank = null;
-  frm._pzCompanyDefaultsHasCurrencyDependentDefaults = false;
-  frm._pzCompanyDefaultsAppliedValues = {};
-  frm._pzCompanyDefaultTouchedFields = new Set();
-  frm._pzCompanyDefaultObservedValues = Object.fromEntries(
-    currencyDependentDefaultFields.map((fieldname) => [fieldname, frm.doc[fieldname]])
-  );
-  frm._pzCollectionGraceTouchedCompany = null;
-  frm._pzLastSelectedCompany = frm.doc.company || null;
   frm._pzApplyingCompanyDefaults = false;
   frm._pzClearingCompanySpecificValues = false;
 }
@@ -73,12 +90,13 @@ function isCurrentDefaultsRequest(frm, doc, company, requestId) {
     && doc.company === company && requestId === frm._pzCompanyDefaultsRequestId;
 }
 
-async function setCurrentDocumentValues(frm, values, isCurrent) {
+async function setCurrentDocumentValues(frm, values, isCurrent, didSet = () => {}) {
   // set_value(object) runs field events asynchronously. Recheck before every
   // field so navigating during an event cannot write into the next document.
   for (const [fieldname, value] of Object.entries(values)) {
     if (!isCurrent()) return;
     await frm.set_value(fieldname, value);
+    didSet(fieldname, value);
   }
 }
 
@@ -216,6 +234,7 @@ function clearCopiedCurrencyDefaults(frm, fields = currencyDependentDefaultField
 }
 
 function isUntouchedFrameworkCurrencyDefault(frm, fieldname) {
+  if (frm._pzCompanyDefaultsPrefilled) return false;
   if (frm._pzCompanyDefaultTouchedFields.has(fieldname)) return false;
   const field = frm.fields_dict[fieldname];
   return Boolean(field)
@@ -358,15 +377,13 @@ function loadCompanyDefaults(frm, expectedCompany, requestId) {
         }
       }
       if (Object.keys(values).length) {
+        const applied = frm._pzCompanyDefaultsAppliedValues;
         frm._pzApplyingCompanyDefaults = true;
-        setCurrentDocumentValues(frm, values, isCurrent).then(() => {
+        setCurrentDocumentValues(frm, values, isCurrent, (fieldname, value) => {
+          // Keep provenance even if a field event navigated to another form.
+          if (doc[fieldname] === value) applied[fieldname] = value;
+        }).then(() => {
           if (!isCurrent()) return;
-          const applied = Object.fromEntries(Object.entries(values).filter(
-            ([fieldname, value]) => frm.doc[fieldname] === value
-          ));
-          frm._pzCompanyDefaultsAppliedValues = Object.assign(
-            {}, frm._pzCompanyDefaultsAppliedValues || {}, applied
-          );
           frm._pzApplyingCompanyDefaults = false;
           renderDailyChecklist(frm);
         }, () => {

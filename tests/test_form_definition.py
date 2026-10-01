@@ -167,7 +167,7 @@ class TestContractFormDefinition(unittest.TestCase):
         self.assertIn('frm._pzCompanyDefaultsCurrencyMismatchFor === frm.doc.company', self.javascript)
         self.assertIn('frm.doc.currency === frm._pzCompanyDefaultsConfiguredCurrency', self.javascript)
         self.assertIn('loadCompanyDefaults(frm, frm.doc.company);', self.javascript)
-        self.assertIn('frm._pzCompanyDefaultsAppliedValues = Object.assign(', self.javascript)
+        self.assertIn('if (doc[fieldname] === value) applied[fieldname] = value;', self.javascript)
         self.assertIn('if (frm._pzCompanyDefaultTouchedFields.has(fieldname)) continue;', self.javascript)
         self.assertIn('if (copied[fieldname] === value && frm.doc[fieldname] == null) delete copied[fieldname];', self.javascript)
         clear_currency_defaults = re.search(r"function clearCopiedCurrencyDefaults\(frm, fields = currencyDependentDefaultFields\) \{(.*?)\n\}", self.javascript, re.S).group(1)
