@@ -1,0 +1,265 @@
+{
+  "doctype": "DocType",
+  "name": "PZ Contract Defaults",
+  "module": "Sales Contracts",
+  "custom": 0,
+  "engine": "InnoDB",
+  "field_order": [
+    "company",
+    "seller_details",
+    "seller_address",
+    "seller_signatory",
+    "seller_position",
+    "commercial_defaults",
+    "currency",
+    "conversion_rate",
+    "selling_price_list",
+    "delivery_terms",
+    "delivery_arrangement",
+    "transport_responsibility",
+    "insurance_responsibility",
+    "measurement_basis",
+    "timezone",
+    "business_days",
+    "opens_at",
+    "closes_at",
+    "holiday_list",
+    "notice_channel",
+    "collection_grace",
+    "grace_unit",
+    "collection_arrangement",
+    "delay_charges",
+    "penalty_basis_cap",
+    "cure_period",
+    "latent_claim_period",
+    "force_majeure_threshold",
+    "governing_law",
+    "courts",
+    "payment_instructions",
+    "bank_receiving_account",
+    "cash_receiving_account",
+    "beneficiary",
+    "bank_branch",
+    "account_iban",
+    "swift_reference"
+  ],
+  "fields": [
+    {
+      "fieldname": "company",
+      "label": "Seller company",
+      "fieldtype": "Link",
+      "options": "Company",
+      "reqd": 1,
+      "unique": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "seller_details",
+      "label": "Seller details",
+      "fieldtype": "Section Break"
+    },
+    {
+      "fieldname": "seller_address",
+      "label": "Seller address",
+      "fieldtype": "Link",
+      "options": "Address"
+    },
+    {
+      "fieldname": "seller_signatory",
+      "label": "Authorised seller signatory",
+      "fieldtype": "Data"
+    },
+    {
+      "fieldname": "seller_position",
+      "label": "Seller signatory position",
+      "fieldtype": "Data"
+    },
+    {
+      "fieldname": "commercial_defaults",
+      "label": "Currency defaults (review for each deal)",
+      "fieldtype": "Section Break"
+    },
+    {
+      "fieldname": "currency",
+      "label": "Contract currency",
+      "fieldtype": "Link",
+      "options": "Currency"
+    },
+    {
+      "fieldname": "conversion_rate",
+      "label": "Exchange rate to company currency",
+      "fieldtype": "Float"
+    },
+    {
+      "fieldname": "selling_price_list",
+      "label": "Selling price list",
+      "fieldtype": "Link",
+      "options": "Price List"
+    },
+    {
+      "fieldname": "delivery_terms",
+      "label": "Company delivery and legal schedule defaults",
+      "fieldtype": "Section Break",
+      "collapsible": 1
+    },
+    {
+      "fieldname": "delivery_arrangement",
+      "label": "Signed delivery / risk arrangement",
+      "fieldtype": "Small Text"
+    },
+    {
+      "fieldname": "transport_responsibility",
+      "label": "Transport responsibility",
+      "fieldtype": "Small Text"
+    },
+    {
+      "fieldname": "insurance_responsibility",
+      "label": "Insurance responsibility",
+      "fieldtype": "Small Text"
+    },
+    {
+      "fieldname": "measurement_basis",
+      "label": "Measurement basis / tolerance / price adjustment",
+      "fieldtype": "Small Text"
+    },
+    {
+      "fieldname": "timezone",
+      "label": "Business IANA time zone",
+      "fieldtype": "Data"
+    },
+    {
+      "fieldname": "business_days",
+      "label": "Business days (Monday,Tuesday,...)",
+      "fieldtype": "Data"
+    },
+    {
+      "fieldname": "opens_at",
+      "label": "Opening time",
+      "fieldtype": "Time"
+    },
+    {
+      "fieldname": "closes_at",
+      "label": "Closing time",
+      "fieldtype": "Time"
+    },
+    {
+      "fieldname": "holiday_list",
+      "label": "Agreed holiday calendar",
+      "fieldtype": "Link",
+      "options": "Holiday List"
+    },
+    {
+      "fieldname": "notice_channel",
+      "label": "Agreed written notice channel",
+      "fieldtype": "Data"
+    },
+    {
+      "fieldname": "collection_grace",
+      "label": "Collection grace period",
+      "fieldtype": "Float"
+    },
+    {
+      "fieldname": "grace_unit",
+      "label": "Collection grace unit",
+      "fieldtype": "Select",
+      "options": "\nCalendar hours\nBusiness hours"
+    },
+    {
+      "fieldname": "collection_arrangement",
+      "label": "Readiness / pickup window and instructions",
+      "fieldtype": "Small Text"
+    },
+    {
+      "fieldname": "delay_charges",
+      "label": "Storage / handling / reheating / reloading / demurrage bases",
+      "fieldtype": "Small Text"
+    },
+    {
+      "fieldname": "penalty_basis_cap",
+      "label": "Penalty / delay compensation basis and cap (or expressly none)",
+      "fieldtype": "Small Text"
+    },
+    {
+      "fieldname": "cure_period",
+      "label": "Default cure period",
+      "fieldtype": "Data"
+    },
+    {
+      "fieldname": "latent_claim_period",
+      "label": "Latent defect notification period",
+      "fieldtype": "Data"
+    },
+    {
+      "fieldname": "force_majeure_threshold",
+      "label": "Force majeure termination threshold",
+      "fieldtype": "Data"
+    },
+    {
+      "fieldname": "governing_law",
+      "label": "Governing law",
+      "fieldtype": "Data"
+    },
+    {
+      "fieldname": "courts",
+      "label": "Agreed courts",
+      "fieldtype": "Data"
+    },
+    {
+      "fieldname": "payment_instructions",
+      "label": "Verified payment instructions",
+      "fieldtype": "Section Break",
+      "collapsible": 1
+    },
+    {
+      "fieldname": "bank_receiving_account",
+      "label": "Nominated bank receiving account",
+      "fieldtype": "Link",
+      "options": "Account",
+      "description": "Must be an enabled Bank ledger account for this Company and in the selected default currency."
+    },
+    {
+      "fieldname": "cash_receiving_account",
+      "label": "Agreed cash receiving account (optional)",
+      "fieldtype": "Link",
+      "options": "Account"
+    },
+    {
+      "fieldname": "beneficiary",
+      "label": "Account beneficiary",
+      "fieldtype": "Data"
+    },
+    {
+      "fieldname": "bank_branch",
+      "label": "Bank / branch",
+      "fieldtype": "Data"
+    },
+    {
+      "fieldname": "account_iban",
+      "label": "Currency / account / IBAN",
+      "fieldtype": "Data"
+    },
+    {
+      "fieldname": "swift_reference",
+      "label": "SWIFT / payment reference",
+      "fieldtype": "Data"
+    }
+  ],
+  "permissions": [
+    {
+      "role": "System Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "print": 0,
+      "email": 0,
+      "export": 0
+    }
+  ],
+  "track_changes": 1,
+  "autoname": "field:company",
+  "allow_rename": 0,
+  "title_field": "company",
+  "sort_field": "modified",
+  "sort_order": "DESC"
+}

@@ -6,22 +6,12 @@
   "istable": 0,
   "engine": "InnoDB",
   "field_order": [
+    "daily_sales_guide",
     "parties",
     "customer",
     "company",
     "transaction_date",
     "delivery_date",
-    "customer_name",
-    "customer_tax_id",
-    "customer_address",
-    "address_display",
-    "contact_person",
-    "contact_display",
-    "seller_address",
-    "seller_address_display",
-    "seller_signatory",
-    "seller_position",
-    "buyer_position",
     "commercial",
     "currency",
     "conversion_rate",
@@ -38,6 +28,22 @@
     "delivery",
     "incoterm",
     "named_place",
+    "specs",
+    "specifications",
+    "customer_details",
+    "customer_name",
+    "customer_tax_id",
+    "customer_address",
+    "address_display",
+    "contact_person",
+    "contact_display",
+    "seller_details",
+    "seller_address",
+    "seller_address_display",
+    "seller_signatory",
+    "seller_position",
+    "buyer_position",
+    "delivery_terms",
     "delivery_arrangement",
     "transport_responsibility",
     "insurance_responsibility",
@@ -59,8 +65,6 @@
     "force_majeure_threshold",
     "governing_law",
     "courts",
-    "specs",
-    "specifications",
     "payment",
     "bank_receiving_account",
     "cash_receiving_account",
@@ -83,8 +87,13 @@
   ],
   "fields": [
     {
+      "fieldname": "daily_sales_guide",
+      "label": "Daily contract checklist",
+      "fieldtype": "HTML"
+    },
+    {
       "fieldname": "parties",
-      "label": "Parties",
+      "label": "Start here: Customer and dates",
       "fieldtype": "Section Break"
     },
     {
@@ -101,7 +110,8 @@
       "fieldtype": "Link",
       "options": "Company",
       "reqd": 1,
-      "in_list_view": 1
+      "in_list_view": 1,
+      "description": "Optional Company Contract Defaults fill blank seller details and agreed terms. Review them for this deal; changing Company clears Company-specific values."
     },
     {
       "fieldname": "transaction_date",
@@ -114,6 +124,12 @@
       "label": "Planned delivery date",
       "fieldtype": "Date",
       "reqd": 1
+    },
+    {
+      "fieldname": "customer_details",
+      "label": "Buyer details",
+      "fieldtype": "Section Break",
+      "collapsible": 1
     },
     {
       "fieldname": "customer_name",
@@ -154,6 +170,12 @@
       "read_only": 1
     },
     {
+      "fieldname": "seller_details",
+      "label": "Seller details",
+      "fieldtype": "Section Break",
+      "collapsible": 1
+    },
+    {
       "fieldname": "seller_address",
       "label": "Seller address",
       "fieldtype": "Link",
@@ -186,7 +208,7 @@
     },
     {
       "fieldname": "commercial",
-      "label": "Products and price",
+      "label": "Products, quantity and price",
       "fieldtype": "Section Break"
     },
     {
@@ -194,7 +216,8 @@
       "label": "Currency",
       "fieldtype": "Link",
       "options": "Currency",
-      "reqd": 1
+      "reqd": 1,
+      "description": "A Company default fills this only when blank and never replaces a nonblank currency. Rate, price list and receiving-account defaults load only when currencies match; enter a coherent bundle for this deal."
     },
     {
       "fieldname": "conversion_rate",
@@ -272,7 +295,7 @@
     },
     {
       "fieldname": "delivery",
-      "label": "Delivery and Commercial Schedule",
+      "label": "Incoterm and named place",
       "fieldtype": "Section Break"
     },
     {
@@ -287,6 +310,12 @@
       "label": "Incoterm named place",
       "fieldtype": "Data",
       "reqd": 1
+    },
+    {
+      "fieldname": "delivery_terms",
+      "label": "Delivery arrangements, working hours and legal schedule",
+      "fieldtype": "Section Break",
+      "collapsible": 1
     },
     {
       "fieldname": "delivery_arrangement",
@@ -433,7 +462,8 @@
     {
       "fieldname": "payment",
       "label": "Verified payment instructions",
-      "fieldtype": "Section Break"
+      "fieldtype": "Section Break",
+      "collapsible": 1
     },
     {
       "fieldname": "bank_receiving_account",
@@ -477,7 +507,8 @@
     {
       "fieldname": "records",
       "label": "Approval and collection record",
-      "fieldtype": "Section Break"
+      "fieldtype": "Section Break",
+      "collapsible": 1
     },
     {
       "fieldname": "approval_received",
@@ -527,7 +558,8 @@
     {
       "fieldname": "internal",
       "label": "ERP control (independent of payment marker)",
-      "fieldtype": "Section Break"
+      "fieldtype": "Section Break",
+      "collapsible": 1
     },
     {
       "fieldname": "sales_order",
