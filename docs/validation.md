@@ -1,5 +1,13 @@
 # Validation evidence
 
+## Daily-entry form follow-up (2026-10-02)
+
+- Starting from PR #3 revision `c07fd6b0c05829318919e8166d839e55b49c935a`, two added Desk behavior regressions reproduced interrupted Company clearing retaining the old seller's fields and an explicit price-list edit being lost on a later currency round trip.
+- Each unsaved document now retains its original pending Company-clear snapshot across navigation. Clearing resumes before requesting the new Company's profile. Field-specific write tracking distinguishes automatic changes from edits made while an asynchronous event is pending, including edits back to a previous value.
+- The local JavaScript behavior suite passes **22 tests**, including both reproductions, fresh edits before and during resumed clearing, explicit zero grace, repeated refreshes, document isolation, amendments, copied bank instructions and native prefilled values. The calendar/form-definition suite passes **15 tests**. Python compilation, JavaScript syntax and whitespace checks also pass.
+- This Mini has no Bench/Frappe or local MariaDB/Redis installation. Native ERPNext validation uses GitHub's disposable v16 bench for the pushed commit; its 41-test result must be checked before merge. These JavaScript harness results do not claim a completed native Desk visual walkthrough. Earlier MacBook native results are recorded in the PR, with its unfinished Desk walkthrough explicitly disclosed.
+- This follow-up changes only client default-state handling and its regressions. Required fields, server validation, optional defaults, explicit entry, amendment snapshots, first-family DRAFT/payment/refund/history rules, permissions and complete printed terms remain covered by the existing suites.
+
 ## Refund and review fixes — version 0.1.1 (2026-10-01)
 
 - Follow-up is based on merged main `44527abe71ed2e68556fc04b9e3a9abf9f585625`. Independent standards and requirements reviews identified one P1 refunded-advance defect and five P2 controller/print-permission issues.

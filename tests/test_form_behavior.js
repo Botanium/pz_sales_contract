@@ -228,3 +228,110 @@ test("edits made while defaults are applying remain authoritative", async () => 
   assert.equal(ui.frm.doc.beneficiary, "Verified Beneficiary B");
   assert.equal(ui.frm.doc.account_iban, null);
 });
+
+test("returning completes a Company change before loading the new seller defaults", async () => {
+  const ui = desk(); await ui.refresh();
+  await ui.respond(0, { ...profile, seller_address: "Address A" });
+  const first = ui.frm.doc;
+  const second = newDoc("second");
+  ui.frm.afterSet = (fieldname) => {
+    if (fieldname === "seller_address" && first.seller_address === null) {
+      ui.frm.afterSet = null;
+      ui.frm.doc = second; ui.events.refresh(ui.frm);
+    }
+  };
+  await ui.frm.set_value("company", "Another Seller"); await flush();
+  assert.equal(first.seller_signatory, profile.seller_signatory);
+  assert.equal(second.seller_signatory, undefined);
+  assert.equal(ui.requests.filter((request) => request.args.company === "Another Seller").length, 0);
+  ui.frm.doc = first; await ui.refresh();
+  const nextProfile = {
+    ...profile, seller_address: "Address B", seller_signatory: "Signer B",
+    governing_law: "Law B", bank_receiving_account: "Bank B",
+  };
+  assert.equal(ui.requests.at(-1).args.company, "Another Seller");
+  await ui.respond(ui.requests.length - 1, nextProfile);
+  for (const field of ["seller_address", "seller_signatory", "governing_law", "bank_receiving_account"])
+    assert.equal(first[field], nextProfile[field], field);
+  assert.equal(second.seller_signatory, undefined);
+});
+
+test("a generic-value edit during defaults survives a later currency round trip", async () => {
+  const ui = desk();
+  ui.frm.fields_dict.selling_price_list = { df: { __default_value: "Generic Prices" } };
+  await ui.refresh();
+  ui.frm.afterSet = async (fieldname) => {
+    if (fieldname === "seller_signatory") {
+      ui.frm.afterSet = null;
+      await ui.frm.set_value("selling_price_list", "Generic Prices");
+    }
+  };
+  await ui.respond();
+  assert.equal(ui.frm.doc.selling_price_list, "Generic Prices");
+  await ui.frm.set_value("currency", "EUR"); await flush();
+  await ui.frm.set_value("currency", "USD"); await flush();
+  await ui.respond();
+  assert.equal(ui.frm.doc.selling_price_list, "Generic Prices");
+});
+
+for (const editTiming of ["before resuming", "during resumed field events"]) {
+  test(`returning preserves fresh Company-field edits ${editTiming}`, async () => {
+    const ui = desk(); await ui.refresh();
+    await ui.respond(0, { ...profile, seller_address: "Address A", collection_grace: 48 });
+    const first = ui.frm.doc;
+    ui.frm.afterSet = (fieldname) => {
+      if (fieldname === "seller_address" && first.seller_address === null) {
+        ui.frm.afterSet = null;
+        ui.frm.doc = newDoc("second"); ui.events.refresh(ui.frm);
+      }
+    };
+    await ui.frm.set_value("company", "Another Seller"); await flush();
+    ui.frm.doc = first;
+    const enterFreshValues = async () => {
+      await ui.frm.set_value("seller_signatory", "Deal Signer");
+      await ui.frm.set_value("governing_law", "Temporary Edit");
+      await ui.frm.set_value("governing_law", profile.governing_law);
+      await ui.frm.set_value("bank_receiving_account", "Deal Bank");
+      await ui.frm.set_value("collection_grace", 0);
+    };
+    if (editTiming === "before resuming") await enterFreshValues();
+    else ui.frm.afterSet = async (fieldname) => {
+      if (fieldname === "seller_signatory" && first.seller_signatory === null) {
+        ui.frm.afterSet = null;
+        await enterFreshValues();
+      }
+    };
+    await ui.refresh();
+    await ui.respond(ui.requests.length - 1, {
+      ...profile, seller_address: "Address B", seller_signatory: "Signer B",
+      governing_law: "Law B", bank_receiving_account: "Bank B", collection_grace: 24,
+    });
+    assert.equal(first.seller_address, "Address B");
+    assert.equal(first.seller_signatory, "Deal Signer");
+    assert.equal(first.governing_law, profile.governing_law);
+    assert.equal(first.bank_receiving_account, "Deal Bank");
+    assert.equal(first.collection_grace, 0);
+    assert.equal(first.account_iban, null);
+  });
+}
+
+test("refreshes during Company clearing wait for the remaining fields before requesting defaults", async () => {
+  const ui = desk(); await ui.refresh(); await ui.respond();
+  let finishEvent;
+  ui.frm.afterSet = (fieldname) => {
+    if (fieldname === "seller_signatory" && ui.frm.doc.seller_signatory === null) {
+      ui.frm.afterSet = null;
+      return new Promise((resolve) => { finishEvent = resolve; });
+    }
+  };
+  await ui.frm.set_value("company", "Another Seller"); await flush();
+  assert.equal(typeof finishEvent, "function");
+  await ui.refresh(); await ui.refresh();
+  assert.equal(ui.requests.length, 1);
+  finishEvent(); await flush();
+  assert.equal(ui.requests.length, 2);
+  assert.equal(ui.frm.doc.governing_law, null);
+  assert.equal(ui.frm.doc.bank_receiving_account, null);
+  await ui.respond(1, { ...profile, seller_signatory: "Signer B" });
+  assert.equal(ui.frm.doc.seller_signatory, "Signer B");
+});

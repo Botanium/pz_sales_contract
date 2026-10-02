@@ -66,9 +66,12 @@ function ensureCompanyDefaultsDocument(frm) {
       _pzCompanyDefaultsConfiguredBank: null,
       _pzCompanyDefaultsHasCurrencyDependentDefaults: false,
       _pzCompanyDefaultsAppliedValues: {},
+      _pzCompanyDefaultsPendingClear: null,
+      _pzCompanyDefaultWrites: {},
+      _pzCompanyDefaultEditRevisions: {},
       _pzCompanyDefaultTouchedFields: new Set(),
       _pzCompanyDefaultObservedValues: Object.fromEntries(
-        currencyDependentDefaultFields.map((fieldname) => [fieldname, frm.doc[fieldname]])
+        companyDefaultFields.map((fieldname) => [fieldname, frm.doc[fieldname]])
       ),
       // Native Duplicate and Quick Entry mark their existing values as prefilled.
       _pzCompanyDefaultsPrefilled: frm.doc.__run_link_triggers === false,
@@ -95,12 +98,22 @@ async function setCurrentDocumentValues(frm, values, isCurrent, didSet = () => {
   // field so navigating during an event cannot write into the next document.
   const doc = frm.doc;
   const before = Object.fromEntries(Object.keys(values).map((fieldname) => [fieldname, doc[fieldname]]));
+  const writes = frm._pzCompanyDefaultWrites;
+  const revisions = frm._pzCompanyDefaultEditRevisions;
+  const beforeRevisions = { ...revisions };
   for (const [fieldname, value] of Object.entries(values)) {
     if (!isCurrent()) return;
     // A user can edit a later field while an earlier Link event awaits AJAX.
-    if (doc[fieldname] !== before[fieldname]) continue;
-    await frm.set_value(fieldname, value);
-    didSet(fieldname, value);
+    if (doc[fieldname] !== before[fieldname]
+      || revisions[fieldname] !== beforeRevisions[fieldname]) continue;
+    const write = { value };
+    writes[fieldname] = write;
+    try {
+      await frm.set_value(fieldname, value);
+      didSet(fieldname, value);
+    } finally {
+      if (writes[fieldname] === write) delete writes[fieldname];
+    }
   }
 }
 
@@ -189,14 +202,18 @@ function showCompanyCurrencyMismatch(configuredCurrency, contractCurrency) {
 
 function markCompanyDefaultTouched(frm, fieldname) {
   ensureCompanyDefaultsDocument(frm);
-  if (!currencyDependentDefaultFields.includes(fieldname)) return;
+  if (!companyDefaultFields.includes(fieldname)) return;
   const previous = frm._pzCompanyDefaultObservedValues[fieldname];
   frm._pzCompanyDefaultObservedValues[fieldname] = frm.doc[fieldname];
   // Frappe force-triggers unchanged Link defaults during new-form rendering.
-  if (previous === frm.doc[fieldname]
-    || frm._pzApplyingCompanyDefaults
-    || frm._pzClearingCompanySpecificValues) return;
+  // Ignore only our write to this field. A different field (or a different
+  // value in this field) can be deliberately edited while its event awaits.
+  const write = frm._pzCompanyDefaultWrites[fieldname];
+  if (previous === frm.doc[fieldname] || (write && write.value === frm.doc[fieldname])) return;
   frm._pzCompanyDefaultTouchedFields.add(fieldname);
+  const revisions = frm._pzCompanyDefaultEditRevisions;
+  revisions[fieldname] = (revisions[fieldname] || 0) + 1;
+  return true;
 }
 
 function clearCopiedCurrencyDefaults(frm, fields = currencyDependentDefaultFields) {
@@ -334,6 +351,9 @@ function loadCompanyDefaults(frm, expectedCompany, requestId) {
   ensureCompanyDefaultsDocument(frm);
   const company = expectedCompany || frm.doc.company;
   if (!company || !frm.is_new() || frm.doc.amended_from) return;
+  // A suspended Company change must finish clearing its old seller snapshot
+  // before any new profile can be requested or applied.
+  if (frm._pzCompanyDefaultsPendingClear) return;
   const doc = frm.doc;
   if (requestId === undefined) {
     if (frm._pzCompanyDefaultsLoadedFor === company || frm._pzCompanyDefaultsRequestedFor === company) return;
@@ -426,6 +446,11 @@ function clearCompanySpecificValues(frm) {
   ensureCompanyDefaultsDocument(frm);
   if (!frm.is_new() || frm.doc.amended_from) return;
   const doc = frm.doc;
+  const clear = Object.fromEntries([...companyDefaultFields, "seller_address_display"].map((fieldname) => [fieldname, null]));
+  frm._pzCompanyDefaultsPendingClear = {
+    company: doc.company,
+    before: Object.fromEntries(Object.keys(clear).map((fieldname) => [fieldname, doc[fieldname]])),
+  };
   const requestId = (frm._pzCompanyDefaultsRequestId || 0) + 1;
   frm._pzCompanyDefaultsRequestId = requestId;
   frm._pzCompanyDefaultsLoadedFor = null;
@@ -436,13 +461,38 @@ function clearCompanySpecificValues(frm) {
   frm._pzCompanyDefaultsHasCurrencyDependentDefaults = false;
   frm._pzCompanyDefaultsAppliedValues = {};
   frm._pzCompanyDefaultTouchedFields = new Set();
-  const company = frm.doc.company;
-  const isCurrent = () => isCurrentDefaultsRequest(frm, doc, company, requestId);
-  const clear = Object.fromEntries([...companyDefaultFields, "seller_address_display"].map((fieldname) => [fieldname, null]));
+  frm._pzCompanyDefaultEditRevisions = {};
+  frm._pzCompanyDefaultWrites = {};
+  frm._pzCompanyDefaultObservedValues = { ...frm._pzCompanyDefaultsPendingClear.before };
   frm._pzCollectionGraceTouchedCompany = null;
+  return resumeCompanySpecificClear(frm);
+}
+
+function resumeCompanySpecificClear(frm) {
+  ensureCompanyDefaultsDocument(frm);
+  if (!frm.is_new() || frm.doc.amended_from) return;
+  const pending = frm._pzCompanyDefaultsPendingClear;
+  if (!pending) return;
+  if (pending.company !== frm.doc.company) return clearCompanySpecificValues(frm);
+  const doc = frm.doc;
+  const company = frm.doc.company;
+  const requestId = frm._pzCompanyDefaultsRequestId;
+  if (pending.requestId === requestId) return pending.promise;
+  const isCurrent = () => isCurrentDefaultsRequest(frm, doc, company, requestId)
+    && frm._pzCompanyDefaultsPendingClear === pending;
+  const clear = {};
+  for (const [fieldname, value] of Object.entries(pending.before)) {
+    // Retain the original snapshot across navigation. Values entered after
+    // the Company change, including edits back to the old value, are explicit.
+    if (!frm._pzCompanyDefaultTouchedFields.has(fieldname) && doc[fieldname] === value) {
+      clear[fieldname] = null;
+    }
+  }
+  pending.requestId = requestId;
   frm._pzClearingCompanySpecificValues = true;
-  return setCurrentDocumentValues(frm, clear, isCurrent).then(() => {
+  pending.promise = setCurrentDocumentValues(frm, clear, isCurrent).then(() => {
     if (!isCurrent()) return;
+    frm._pzCompanyDefaultsPendingClear = null;
     frm._pzClearingCompanySpecificValues = false;
     if (frm.doc.company === company && requestId === frm._pzCompanyDefaultsRequestId) {
       loadCompanyDefaults(frm, company, requestId);
@@ -450,9 +500,11 @@ function clearCompanySpecificValues(frm) {
     renderDailyChecklist(frm);
   }, () => {
     if (!isCurrent()) return;
+    pending.requestId = null;
     frm._pzClearingCompanySpecificValues = false;
     renderDailyChecklist(frm);
   });
+  return pending.promise;
 }
 
 function registerChecklistEvents() {
@@ -483,7 +535,10 @@ frappe.ui.form.on("PZ Sales Contract", {
     frm.set_intro("The first contract family saved using this app carries DRAFT until the full 30% advance has qualifying bank reconciliation or agreed cash receipt evidence. Finance can register verified prior contracts through PZ Customer History. ERP submission is separate. Save before printing.");
     renderDailyChecklist(frm);
     const doc = frm.doc;
-    Promise.resolve(reconcileCopiedCompanyDefaults(frm)).then(() => {
+    Promise.resolve(resumeCompanySpecificClear(frm)).then(() => {
+      if (frm.doc !== doc || frm._pzCompanyDefaultsPendingClear) return;
+      return reconcileCopiedCompanyDefaults(frm);
+    }).then(() => {
       if (frm.doc !== doc) return;
       if (frm.is_new() && !frm.doc.amended_from && frm.doc.company) loadCompanyDefaults(frm);
     });
@@ -523,6 +578,7 @@ frappe.ui.form.on("PZ Sales Contract", {
   },
   currency(frm) {
     ensureCompanyDefaultsDocument(frm);
+    markCompanyDefaultTouched(frm, "currency");
     renderDailyChecklist(frm);
     if (!frm.is_new() || frm.doc.amended_from || !frm.doc.company
       || frm._pzApplyingCompanyDefaults || frm._pzClearingCompanySpecificValues) return;
@@ -555,7 +611,7 @@ frappe.ui.form.on("PZ Sales Contract", {
   },
   collection_grace(frm) {
     ensureCompanyDefaultsDocument(frm);
-    if (!frm._pzApplyingCompanyDefaults && !frm._pzClearingCompanySpecificValues && frm.doc.company) {
+    if (markCompanyDefaultTouched(frm, "collection_grace") && frm.doc.company) {
       frm._pzCollectionGraceTouchedCompany = frm.doc.company;
     }
     renderDailyChecklist(frm);
