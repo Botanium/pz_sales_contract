@@ -2,6 +2,9 @@
 
 ## Daily-entry form follow-up (2026-10-02)
 
+- A further source-backed regression on `b7a57502948faa705ae722fe023b27b8f61ccba0` reproduced Save overtaking a paused Company change: mandatory checks passed with Company B's address/account but Company A's signer/legal text. The regression executes Frappe's actual model, ScriptManager, mandatory-check and save functions, intercepting every network write.
+- Save now rejects while any document-scoped defaults fetch, application, clear or dependent reconciliation is unfinished. It never silently resumes a rejected save. Token cleanup handles superseded operations and empty/failed lookups, including Frappe's internally handled query timeouts/deadlocks; failed Company clears can be retried at Save. Currency changes during bank-instruction clearing are reconciled before the barrier is released.
+- Cloud checks pass **28 JavaScript behavior tests**, **7 native-source request/save-pipeline tests**, and **15 Python calendar/form-definition tests**, plus JavaScript syntax, Python compilation and whitespace checks. The native-source tests used Frappe `f3f0c0b13c77a419487150a198fed42964e1919e` (16.36.0) locally. CI runs them against its actual installed v16 sources. This is a source-backed harness, not a completed native Desk visual walkthrough or a new local ERPNext/database integration run; pushed-commit CI still needs verification.
 - Starting from PR #3 revision `c07fd6b0c05829318919e8166d839e55b49c935a`, two added Desk behavior regressions reproduced interrupted Company clearing retaining the old seller's fields and an explicit price-list edit being lost on a later currency round trip.
 - Each unsaved document now retains its original pending Company-clear snapshot across navigation. Clearing resumes before requesting the new Company's profile. Field-specific write tracking distinguishes automatic changes from edits made while an asynchronous event is pending, including edits back to a previous value.
 - The local JavaScript behavior suite passes **22 tests**, including both reproductions, fresh edits before and during resumed clearing, explicit zero grace, repeated refreshes, document isolation, amendments, copied bank instructions and native prefilled values. The calendar/form-definition suite passes **15 tests**. Python compilation, JavaScript syntax and whitespace checks also pass.
@@ -49,6 +52,8 @@ Run native tests on a disposable v16 site with `allow_tests` enabled:
 ```sh
 bench --site TEST_SITE run-tests --app pz_sales_contract
 python -m unittest discover -s tests -v
+node --test tests/test_form_behavior.js
+FRAPPE_APP_PATH=/path/to/bench/apps/frappe node --test tests/native/test_form_save.js
 ```
 
 `pz_sales_contract.demo.export` and `.concurrency` refuse sites outside the disposable `pz-contract-test.*` / `pz-contract-ci.*` naming scope. Export temporarily permits repeated item rows on that test site and restores its prior setting. It creates only synthetic records.

@@ -68,3 +68,7 @@ jobs:
       - name: Test native ERPNext integration
         working-directory: /tmp/pz-bench
         run: bench --site pz-contract-ci.localhost run-tests --app pz_sales_contract
+      - name: Test native Frappe form save pipeline
+        env:
+          FRAPPE_APP_PATH: /tmp/pz-bench/apps/frappe
+        run: node --test tests/native/test_form_save.js

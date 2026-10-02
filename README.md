@@ -36,6 +36,8 @@ Exchange rate, selling price list and receiving-account instructions are copied 
 
 If no defaults record exists, the original explicit-entry workflow remains available and all required contract fields remain required. Changing Company on a new form clears the previous Company's seller address, signatory, currency, accounts and terms before loading the newly selected Company's defaults. Each saved contract is self-contained: changing a defaults record later does not rewrite an existing draft, submitted contract, print or Sales Order. Defaults do not change the first-family DRAFT policy, payment evidence, roles or permissions.
 
+Save is blocked while Company defaults are loading, applying or clearing. Wait for the update to finish, review the resulting values and save again. A blocked attempt never automatically saves later. Empty or failed optional-default lookups still permit manual entry once pending updates have finished.
+
 ## Installation (administrator action)
 
 On a separately approved v16 bench, install the reviewed revision from `main` and verify its actual Git commit:

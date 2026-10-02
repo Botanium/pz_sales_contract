@@ -53,7 +53,7 @@ function ensureCompanyDefaultsDocument(frm) {
   const previous = states.get(frm._pzCompanyDefaultsDocument);
   if (previous) {
     for (const key of Object.keys(previous)) previous[key] = frm[key];
-    if (frm._pzApplyingCompanyDefaults || frm._pzClearingCompanySpecificValues) {
+    if (frm._pzCompanyDefaultsWork.size) {
       previous._pzCompanyDefaultsLoadedFor = null;
     }
   }
@@ -67,6 +67,7 @@ function ensureCompanyDefaultsDocument(frm) {
       _pzCompanyDefaultsHasCurrencyDependentDefaults: false,
       _pzCompanyDefaultsAppliedValues: {},
       _pzCompanyDefaultsPendingClear: null,
+      _pzCompanyDefaultsWork: new Set(),
       _pzCompanyDefaultWrites: {},
       _pzCompanyDefaultEditRevisions: {},
       _pzCompanyDefaultTouchedFields: new Set(),
@@ -84,8 +85,19 @@ function ensureCompanyDefaultsDocument(frm) {
   frm._pzCompanyDefaultsDocument = frm.doc;
   frm._pzCompanyDefaultsRequestId = (frm._pzCompanyDefaultsRequestId || 0) + 1;
   frm._pzCompanyDefaultsRequestedFor = null;
-  frm._pzApplyingCompanyDefaults = false;
-  frm._pzClearingCompanySpecificValues = false;
+}
+
+async function withCompanyDefaultsWork(frm, run) {
+  // Keep the original document's work tracked even if Desk navigates away.
+  // A token covers the whole operation, including dependent reconciliation.
+  const work = frm._pzCompanyDefaultsWork;
+  const operation = {};
+  work.add(operation);
+  try {
+    return await run();
+  } finally {
+    work.delete(operation);
+  }
 }
 
 function isCurrentDefaultsRequest(frm, doc, company, requestId) {
@@ -232,26 +244,27 @@ function clearCopiedCurrencyDefaults(frm, fields = currencyDependentDefaultField
     }
   }
   if (!Object.keys(clear).length) return;
-  frm._pzClearingCompanySpecificValues = true;
-  return setCurrentDocumentValues(frm, clear, isCurrent).then(() => {
+  return withCompanyDefaultsWork(frm, () => setCurrentDocumentValues(frm, clear, isCurrent).then(() => {
     if (!isCurrent()) return;
     for (const [fieldname, value] of Object.entries(clearingValues)) {
       if (copied[fieldname] === value && frm.doc[fieldname] == null) delete copied[fieldname];
     }
-    frm._pzClearingCompanySpecificValues = false;
+    let next;
     if (frm.doc.company && frm._pzCompanyDefaultsCurrencyMismatchFor === frm.doc.company
       && frm.doc.currency === frm._pzCompanyDefaultsConfiguredCurrency) {
       frm._pzCompanyDefaultsCurrencyMismatchFor = null;
       frm._pzCompanyDefaultsLoadedFor = null;
       frm._pzCompanyDefaultsRequestedFor = null;
-      loadCompanyDefaults(frm, frm.doc.company);
+      next = loadCompanyDefaults(frm, frm.doc.company);
     }
     renderDailyChecklist(frm);
+    // A user may have changed currency during a bank-only clear (or vice
+    // versa). Reconcile again before releasing this operation's save barrier.
+    return next || reconcileCopiedCompanyDefaults(frm);
   }, () => {
     if (!isCurrent()) return;
-    frm._pzClearingCompanySpecificValues = false;
     renderDailyChecklist(frm);
-  });
+  }));
 }
 
 function isUntouchedFrameworkCurrencyDefault(frm, fieldname) {
@@ -267,6 +280,7 @@ function reconcileCopiedCompanyDefaults(frm) {
   if (!frm.is_new() || frm.doc.amended_from) return;
   if (frm._pzCompanyDefaultsConfiguredCurrency
     && frm.doc.currency !== frm._pzCompanyDefaultsConfiguredCurrency) {
+    frm._pzCompanyDefaultsCurrencyMismatchFor = frm.doc.company;
     return clearCopiedCurrencyDefaults(frm);
   }
   if (frm._pzCompanyDefaultsConfiguredBank
@@ -363,74 +377,12 @@ function loadCompanyDefaults(frm, expectedCompany, requestId) {
   frm._pzCompanyDefaultsRequestedFor = company;
   const isCurrent = () => isCurrentDefaultsRequest(frm, doc, company, requestId);
 
-  frappe.call({
-    method: "pz_sales_contract.sales_contracts.doctype.pz_contract_defaults.pz_contract_defaults.get_company_defaults",
-    args: { company },
-    callback(response) {
-      if (!isCurrent()) return;
-      frm._pzCompanyDefaultsLoadedFor = company;
-      const configured = response.message || {};
-      const values = {};
-      const currencyCompatible = !isMissingValue("currency", configured.currency)
-        && (isMissingValue("currency", frm.doc.currency) || frm.doc.currency === configured.currency);
-      frm._pzCompanyDefaultsCurrencyMismatchFor = currencyCompatible ? null : company;
-      frm._pzCompanyDefaultsConfiguredCurrency = configured.currency || null;
-      frm._pzCompanyDefaultsConfiguredBank = configured.bank_receiving_account || null;
-      const usesProfileBank = Boolean(configured.bank_receiving_account) && (
-        isMissingValue("bank_receiving_account", doc.bank_receiving_account)
-        || doc.bank_receiving_account === configured.bank_receiving_account
-        || isUntouchedFrameworkCurrencyDefault(frm, "bank_receiving_account")
-      );
-      frm._pzCompanyDefaultsHasCurrencyDependentDefaults = currencyDependentDefaultFields.some(
-        (fieldname) => !isMissingValue(fieldname, configured[fieldname])
-      );
-      if (frm._pzCompanyDefaultsHasCurrencyDependentDefaults && !currencyCompatible) {
-        showCompanyCurrencyMismatch(configured.currency, frm.doc.currency);
-      }
-      for (const fieldname of companyDefaultFields) {
-        const dependent = currencyDependentDefaultFields.includes(fieldname);
-        const replaceFrameworkDefault = dependent && frm._pzCompanyDefaultsHasCurrencyDependentDefaults
-          && isUntouchedFrameworkCurrencyDefault(frm, fieldname);
-        if (dependent && !currencyCompatible) {
-          if (replaceFrameworkDefault) values[fieldname] = null;
-          continue;
-        }
-        if (bankInstructionDefaultFields.includes(fieldname) && !usesProfileBank) {
-          if (replaceFrameworkDefault) values[fieldname] = null;
-          continue;
-        }
-        if (replaceFrameworkDefault && !isMissingValue(fieldname, configured[fieldname])) {
-          values[fieldname] = configured[fieldname];
-          continue;
-        }
-        const initialZeroGrace = fieldname === "collection_grace"
-          && Number(frm.doc[fieldname]) === 0
-          && frm._pzCollectionGraceTouchedCompany !== company;
-        if ((isMissingValue(fieldname, frm.doc[fieldname])
-          || (fieldname === "collection_grace" && initialZeroGrace))
-          && !isMissingValue(fieldname, configured[fieldname])) {
-          values[fieldname] = configured[fieldname];
-        }
-      }
-      if (Object.keys(values).length) {
-        const applied = frm._pzCompanyDefaultsAppliedValues;
-        frm._pzApplyingCompanyDefaults = true;
-        setCurrentDocumentValues(frm, values, isCurrent, (fieldname, value) => {
-          // Keep provenance even if a field event navigated to another form.
-          if (doc[fieldname] === value) applied[fieldname] = value;
-        }).then(() => {
-          if (!isCurrent()) return;
-          frm._pzApplyingCompanyDefaults = false;
-          reconcileCopiedCompanyDefaults(frm);
-          renderDailyChecklist(frm);
-        }, () => {
-          if (!isCurrent()) return;
-          frm._pzApplyingCompanyDefaults = false;
-          renderDailyChecklist(frm);
-        });
-      } else renderDailyChecklist(frm);
-    },
-    error() {
+  return withCompanyDefaultsWork(frm, () => new Promise((resolve) => {
+    let responseHandled = false;
+    const finishWithoutDefaults = () => {
+      if (responseHandled) return;
+      responseHandled = true;
+      resolve();
       if (!isCurrent()) return;
       frm._pzCompanyDefaultsLoadedFor = company;
       frappe.show_alert({
@@ -438,8 +390,83 @@ function loadCompanyDefaults(frm, expectedCompany, requestId) {
         indicator: "orange",
       });
       renderDailyChecklist(frm);
-    },
-  });
+    };
+    frappe.call({
+      method: "pz_sales_contract.sales_contracts.doctype.pz_contract_defaults.pz_contract_defaults.get_company_defaults",
+      args: { company },
+      callback(response) {
+        if (responseHandled) return;
+        responseHandled = true;
+        resolve((async () => {
+          if (!isCurrent()) return;
+          frm._pzCompanyDefaultsLoadedFor = company;
+          const configured = response.message || {};
+          const values = {};
+          const currencyCompatible = !isMissingValue("currency", configured.currency)
+            && (isMissingValue("currency", frm.doc.currency) || frm.doc.currency === configured.currency);
+          frm._pzCompanyDefaultsCurrencyMismatchFor = currencyCompatible ? null : company;
+          frm._pzCompanyDefaultsConfiguredCurrency = configured.currency || null;
+          frm._pzCompanyDefaultsConfiguredBank = configured.bank_receiving_account || null;
+          const usesProfileBank = Boolean(configured.bank_receiving_account) && (
+            isMissingValue("bank_receiving_account", doc.bank_receiving_account)
+            || doc.bank_receiving_account === configured.bank_receiving_account
+            || isUntouchedFrameworkCurrencyDefault(frm, "bank_receiving_account")
+          );
+          frm._pzCompanyDefaultsHasCurrencyDependentDefaults = currencyDependentDefaultFields.some(
+            (fieldname) => !isMissingValue(fieldname, configured[fieldname])
+          );
+          if (frm._pzCompanyDefaultsHasCurrencyDependentDefaults && !currencyCompatible) {
+            showCompanyCurrencyMismatch(configured.currency, frm.doc.currency);
+          }
+          for (const fieldname of companyDefaultFields) {
+            const dependent = currencyDependentDefaultFields.includes(fieldname);
+            const replaceFrameworkDefault = dependent && frm._pzCompanyDefaultsHasCurrencyDependentDefaults
+              && isUntouchedFrameworkCurrencyDefault(frm, fieldname);
+            if (dependent && !currencyCompatible) {
+              if (replaceFrameworkDefault) values[fieldname] = null;
+              continue;
+            }
+            if (bankInstructionDefaultFields.includes(fieldname) && !usesProfileBank) {
+              if (replaceFrameworkDefault) values[fieldname] = null;
+              continue;
+            }
+            if (replaceFrameworkDefault && !isMissingValue(fieldname, configured[fieldname])) {
+              values[fieldname] = configured[fieldname];
+              continue;
+            }
+            const initialZeroGrace = fieldname === "collection_grace"
+              && Number(frm.doc[fieldname]) === 0
+              && frm._pzCollectionGraceTouchedCompany !== company;
+            if ((isMissingValue(fieldname, frm.doc[fieldname])
+              || (fieldname === "collection_grace" && initialZeroGrace))
+              && !isMissingValue(fieldname, configured[fieldname])) {
+              values[fieldname] = configured[fieldname];
+            }
+          }
+          if (Object.keys(values).length) {
+            const applied = frm._pzCompanyDefaultsAppliedValues;
+            await setCurrentDocumentValues(frm, values, isCurrent, (fieldname, value) => {
+              // Keep provenance even if a field event navigated to another form.
+              if (doc[fieldname] === value) applied[fieldname] = value;
+            }).then(() => {
+              if (!isCurrent()) return;
+              const next = reconcileCopiedCompanyDefaults(frm);
+              renderDailyChecklist(frm);
+              return next;
+            }, () => {
+              if (!isCurrent()) return;
+              renderDailyChecklist(frm);
+            });
+          } else renderDailyChecklist(frm);
+        })());
+      },
+      error: finishWithoutDefaults,
+      // Frappe handles some server errors (including deadlocks/timeouts)
+      // without calling error. Final completion must still settle that fetch.
+      // Once callback owns the application promise, always must not release it.
+      always: finishWithoutDefaults,
+    });
+  }));
 }
 
 function clearCompanySpecificValues(frm) {
@@ -489,21 +516,19 @@ function resumeCompanySpecificClear(frm) {
     }
   }
   pending.requestId = requestId;
-  frm._pzClearingCompanySpecificValues = true;
-  pending.promise = setCurrentDocumentValues(frm, clear, isCurrent).then(() => {
+  pending.promise = withCompanyDefaultsWork(frm, () => setCurrentDocumentValues(frm, clear, isCurrent).then(() => {
     if (!isCurrent()) return;
     frm._pzCompanyDefaultsPendingClear = null;
-    frm._pzClearingCompanySpecificValues = false;
     if (frm.doc.company === company && requestId === frm._pzCompanyDefaultsRequestId) {
-      loadCompanyDefaults(frm, company, requestId);
+      renderDailyChecklist(frm);
+      return loadCompanyDefaults(frm, company, requestId);
     }
     renderDailyChecklist(frm);
   }, () => {
     if (!isCurrent()) return;
     pending.requestId = null;
-    frm._pzClearingCompanySpecificValues = false;
     renderDailyChecklist(frm);
-  });
+  }));
   return pending.promise;
 }
 
@@ -530,6 +555,21 @@ frappe.ui.form.on("PZ Sales Contract", {
     frm.set_query("selling_price_list", () => ({ filters: { enabled: 1, selling: 1 } }));
   },
   onload(frm) { ensureCompanyDefaultsDocument(frm); },
+  async before_save(frm) {
+    ensureCompanyDefaultsDocument(frm);
+    if (!frm.is_new() || frm.doc.amended_from) return;
+    if (!frm._pzCompanyDefaultsWork.size) {
+      // Retry a failed/interrupted clear, or reconcile an edit made during a
+      // different field's asynchronous event, before allowing serialization.
+      if (frm._pzCompanyDefaultsPendingClear) resumeCompanySpecificClear(frm);
+      else reconcileCopiedCompanyDefaults(frm);
+    }
+    if (frm._pzCompanyDefaultsPendingClear || frm._pzCompanyDefaultsWork.size) {
+      frappe.throw(__("Company details are still updating. Wait for the update to finish, check the values, then save again."));
+    }
+    // Always return a promise. A synchronous handler would make ScriptManager
+    // wait for unrelated AJAX after this check and reopen the save race.
+  },
   refresh(frm) {
     ensureCompanyDefaultsDocument(frm);
     frm.set_intro("The first contract family saved using this app carries DRAFT until the full 30% advance has qualifying bank reconciliation or agreed cash receipt evidence. Finance can register verified prior contracts through PZ Customer History. ERP submission is separate. Save before printing.");
@@ -581,7 +621,7 @@ frappe.ui.form.on("PZ Sales Contract", {
     markCompanyDefaultTouched(frm, "currency");
     renderDailyChecklist(frm);
     if (!frm.is_new() || frm.doc.amended_from || !frm.doc.company
-      || frm._pzApplyingCompanyDefaults || frm._pzClearingCompanySpecificValues) return;
+      || frm._pzCompanyDefaultsWork.size) return;
     if (frm._pzCompanyDefaultsConfiguredCurrency
       && frm.doc.currency !== frm._pzCompanyDefaultsConfiguredCurrency) {
       frm._pzCompanyDefaultsCurrencyMismatchFor = frm.doc.company;
@@ -603,7 +643,7 @@ frappe.ui.form.on("PZ Sales Contract", {
     markCompanyDefaultTouched(frm, "bank_receiving_account");
     renderDailyChecklist(frm);
     if (!frm.is_new() || frm.doc.amended_from
-      || frm._pzApplyingCompanyDefaults || frm._pzClearingCompanySpecificValues) return;
+      || frm._pzCompanyDefaultsWork.size) return;
     if (frm._pzCompanyDefaultsConfiguredBank
       && frm.doc.bank_receiving_account !== frm._pzCompanyDefaultsConfiguredBank) {
       return clearCopiedCurrencyDefaults(frm, bankInstructionDefaultFields);

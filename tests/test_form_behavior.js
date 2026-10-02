@@ -23,6 +23,7 @@ function desk(doc = newDoc("new-1")) {
     ui: { form: { on: (doctype, events) => { handlers[doctype] = events; } } },
     call: (request) => requests.push(request),
     show_alert: (alert) => alerts.push(alert), user: { has_role: () => false },
+    throw: (message) => { throw new Error(message); },
   };
   vm.runInNewContext(script, { frappe, __: (value) => value, Promise, Set });
   const frm = {
@@ -334,4 +335,123 @@ test("refreshes during Company clearing wait for the remaining fields before req
   assert.equal(ui.frm.doc.bank_receiving_account, null);
   await ui.respond(1, { ...profile, seller_signatory: "Signer B" });
   assert.equal(ui.frm.doc.seller_signatory, "Signer B");
+});
+
+test("currency changes during bank-instruction clearing are reconciled before saving", async () => {
+  const ui = desk(); await ui.refresh(); await ui.respond();
+  let finishEvent;
+  ui.frm.afterSet = (fieldname) => {
+    if (fieldname === "beneficiary" && ui.frm.doc.beneficiary === null) {
+      ui.frm.afterSet = null;
+      return new Promise((resolve) => { finishEvent = resolve; });
+    }
+  };
+  const bankChange = ui.frm.set_value("bank_receiving_account", "Bank B"); await flush();
+  await ui.frm.set_value("currency", "EUR");
+  await assert.rejects(ui.events.before_save(ui.frm), /Company details.*updating/);
+  finishEvent(); await bankChange; await flush();
+  assert.equal(ui.frm.doc.conversion_rate, null);
+  assert.equal(ui.frm.doc.selling_price_list, null);
+  assert.equal(ui.frm.doc.account_iban, null);
+  assert.equal(ui.frm.doc.bank_receiving_account, "Bank B");
+  assert.equal(ui.frm.doc.currency, "EUR");
+  assert.equal(ui.frm._pzCompanyDefaultsWork.size, 0);
+  await ui.events.before_save(ui.frm);
+  await ui.frm.set_value("currency", "USD"); await flush();
+  assert.equal(ui.requests.length, 2);
+  await ui.respond(1);
+  assert.equal(ui.frm.doc.selling_price_list, profile.selling_price_list);
+  assert.equal(ui.frm.doc.bank_receiving_account, "Bank B");
+  assert.equal(ui.frm.doc.account_iban, null);
+});
+
+for (const response of ["empty", "failed"]) {
+  test(`superseded application and ${response} defaults release the save barrier`, async () => {
+    const ui = desk(); await ui.refresh();
+    let finishEvent;
+    ui.frm.afterSet = (fieldname) => {
+      if (fieldname === "seller_signatory") {
+        ui.frm.afterSet = null;
+        return new Promise((resolve) => { finishEvent = resolve; });
+      }
+    };
+    await ui.respond();
+    await ui.frm.set_value("company", "Another Seller"); await flush();
+    if (response === "empty") await ui.respond(1, {});
+    else { ui.requests[1].error(); await flush(); }
+    await assert.rejects(ui.events.before_save(ui.frm), /Company details.*updating/);
+    finishEvent(); await flush();
+    assert.equal(ui.frm._pzCompanyDefaultsWork.size, 0);
+    await ui.events.before_save(ui.frm);
+    await ui.frm.set_value("seller_signatory", "Manually Verified Signer");
+    await ui.events.before_save(ui.frm);
+    assert.equal(ui.frm.doc.seller_signatory, "Manually Verified Signer");
+  });
+}
+
+test("a failed Company clear is retried by Save without allowing a stale snapshot", async () => {
+  const ui = desk(); await ui.refresh(); await ui.respond();
+  ui.frm.afterSet = (fieldname) => {
+    if (fieldname === "seller_signatory" && ui.frm.doc.seller_signatory === null) {
+      ui.frm.afterSet = null;
+      throw new Error("Synthetic field-event failure");
+    }
+  };
+  await ui.frm.set_value("company", "Another Seller"); await flush();
+  assert.ok(ui.frm._pzCompanyDefaultsPendingClear);
+  assert.equal(ui.frm.doc.governing_law, profile.governing_law);
+  await assert.rejects(ui.events.before_save(ui.frm), /Company details.*updating/);
+  await flush();
+  assert.equal(ui.frm.doc.governing_law, null);
+  await ui.respond(1, { ...profile, governing_law: "Law B" });
+  await ui.events.before_save(ui.frm);
+  assert.equal(ui.frm.doc.governing_law, "Law B");
+});
+
+test("overlapping clear completions cannot release another operation's save barrier", async () => {
+  const ui = desk(); await ui.refresh(); await ui.respond();
+  let finishBank, finishCompany;
+  ui.frm.afterSet = (fieldname) => {
+    if (fieldname === "beneficiary" && ui.frm.doc.beneficiary === null) {
+      ui.frm.afterSet = null;
+      return new Promise((resolve) => { finishBank = resolve; });
+    }
+  };
+  const bankChange = ui.frm.set_value("bank_receiving_account", "Bank B"); await flush();
+  ui.frm.afterSet = (fieldname) => {
+    if (fieldname === "seller_signatory" && ui.frm.doc.seller_signatory === null) {
+      ui.frm.afterSet = null;
+      return new Promise((resolve) => { finishCompany = resolve; });
+    }
+  };
+  await ui.frm.set_value("company", "Another Seller"); await flush();
+  finishBank(); await bankChange; await flush();
+  await assert.rejects(ui.events.before_save(ui.frm), /Company details.*updating/);
+  finishCompany(); await flush();
+  await assert.rejects(ui.events.before_save(ui.frm), /Company details.*updating/);
+  await ui.respond(1, {});
+  await ui.events.before_save(ui.frm);
+  assert.equal(ui.frm._pzCompanyDefaultsWork.size, 0);
+});
+
+test("returning during unfinished work preserves the save barrier without blocking another document", async () => {
+  const ui = desk(); await ui.refresh();
+  const first = ui.frm.doc;
+  let finishEvent;
+  ui.frm.afterSet = (fieldname) => {
+    if (fieldname === "seller_signatory") {
+      ui.frm.afterSet = null;
+      return new Promise((resolve) => { finishEvent = resolve; });
+    }
+  };
+  await ui.respond();
+  ui.frm.doc = newDoc("second"); await ui.refresh(); await ui.respond(1, {});
+  await ui.events.before_save(ui.frm);
+  ui.frm.doc = first; await ui.refresh();
+  await assert.rejects(ui.events.before_save(ui.frm), /Company details.*updating/);
+  await ui.respond(2);
+  await assert.rejects(ui.events.before_save(ui.frm), /Company details.*updating/);
+  finishEvent(); await flush();
+  await ui.events.before_save(ui.frm);
+  assert.equal(ui.frm._pzCompanyDefaultsWork.size, 0);
 });
