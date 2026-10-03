@@ -839,16 +839,18 @@ class TestPZSalesContract(IntegrationTestCase):
         d=contract(submit=True, seller_signatory=None, cash_receiving_account=None)
         self.assertEqual(d.seller_signatory, 'Synthetic approved signer at creation')
         self.assertIsNone(d.cash_receiving_account)
-        d.db_set('governing_law', 'Synthetic historical law retained on amendment')
-        d.db_set('approval_received', '2026-10-01T09:00:00+03:00')
-        d.db_set('advance_deadline', '2026-10-02T09:00:00+03:00')
-        d.reload()
         settings.seller_signatory = 'Synthetic later default; never rewrite an agreed contract'
         settings.cash_receiving_account = 'PZ Synthetic Cash - PZT'
         settings.save()
         family=d.first_family
         d.cancel()
         self.assertEqual(frappe.db.get_value('Sales Order',d.sales_order,'docstatus'),2)
+        # Simulate fields retained on an older canceled record; v2 save/submit
+        # paths intentionally clear these fields before cancellation.
+        d.db_set('governing_law', 'Synthetic historical law retained on amendment')
+        d.db_set('approval_received', '2026-10-01T09:00:00+03:00')
+        d.db_set('advance_deadline', '2026-10-02T09:00:00+03:00')
+        d.reload()
         amendment=frappe.copy_doc(d)
         amendment.docstatus=0
         amendment.amended_from=d.name
