@@ -1,12 +1,12 @@
 # USD, packaging and location entry
 
-Applies to new contract families created after this change (`entry_policy_version = usd-location-v1`). Existing records and amendments retain their recorded policy, currency, exchange rate and named-place text.
+USD and location rules apply to new contract families created after this change (`entry_policy_version = usd-location-v1`). Existing records and amendments retain their recorded policy, currency, exchange rate and named-place text. Packaging handling applies to contract lines across all families.
 
 ## Packaging
 
-The Item lookup uses exact verified Item IDs in `entry_policy.ITEM_PACKAGING`. The test-site Item form has no separate packaging field or configured variant packaging attribute. `Bitumen - Bulk` maps to `Bulk`, `Bitumen - Drum` to `Drum`, and `Bitumen - Jumbo` to the literal `Jumbo`. Existing grade-specific Items with explicit Bulk, Drum or Jumbo Bag names are listed individually; there is no substring inference. No size, weight or bag specification is inferred.
+Packaging is not an entry field. The saved snapshot and print use the exact verified Item ID mapping in `entry_policy.ITEM_PACKAGING`. The test-site Item form has no separate packaging field or configured variant packaging attribute. `Bitumen - Bulk` maps to `Bulk`, `Bitumen - Drum` to `Drum`, and `Bitumen - Jumbo` to `Jumbo`. Existing grade-specific Items with explicit Bulk, Drum or Jumbo Bag names are listed individually; there is no substring inference. No size, weight or bag specification is inferred.
 
-Changing or clearing a product clears the prior packaging. Late responses cannot overwrite another product/document or an explicit packaging edit. Unknown Items require manual packaging. The server backfills blank known values and rejects a contradictory value for a new/changed line. Unchanged saved packaging is retained.
+Changing or clearing a product clears the prior packaging. The Item lookup may fill the hidden snapshot for immediate display, while server validation always derives it again for a new or changed Item, including on legacy contracts and amendments. Late responses cannot overwrite another product or document. Unknown Items remain blank; their print shows the Item without a packaging claim. Unchanged saved packaging is retained as historical data, including when an amendment carries the same Item line forward.
 
 ## USD and accounting
 

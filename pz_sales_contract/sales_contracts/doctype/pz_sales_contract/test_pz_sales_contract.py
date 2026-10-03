@@ -208,9 +208,9 @@ class TestPZSalesContract(IntegrationTestCase):
 
         legacy = contract(insert=False, terms_version=None, delivery_date=today(),
             items=[
-                dict(item_code='PZ Synthetic Bitumen', grade='60/70', packaging='Synthetic drums',
+                dict(item_code='PZ Synthetic Bitumen', grade='60/70', packaging=None,
                     qty=10, uom='Nos', rate=100, specification_reference='Synthetic reference A'),
-                dict(item_code='PZ Synthetic Binder', grade='80/100', packaging='Synthetic drums',
+                dict(item_code='PZ Synthetic Binder', grade='80/100', packaging=None,
                     qty=5, uom='Nos', rate=100, specification_reference='Synthetic reference B'),
             ], specifications=[specification])
         with self.assertRaises(frappe.ValidationError):
@@ -223,6 +223,92 @@ class TestPZSalesContract(IntegrationTestCase):
         simplified.append('specifications', specification)
         with self.assertRaises(frappe.ValidationError):
             simplified.validate_specifications()
+
+    def test_legacy_packaging_is_derived_on_item_change_and_saved_for_print(self):
+        for item_code in ('Bitumen - Bulk', 'Bitumen - Drum'):
+            if not frappe.db.exists('Item', item_code):
+                item = frappe.copy_doc(frappe.get_doc('Item', 'PZ Synthetic Bitumen'))
+                item.item_code = item_code
+                item.item_name = item_code
+                item.insert()
+
+        doc = contract(insert=False, items=[dict(item_code='Bitumen - Bulk',
+            qty=10, uom='Nos', rate=100, grade_master=synthetic_bitumen_grade(),
+            grade='PZ-SYNTHETIC-60-70', packaging='Untrusted input',
+            specification_reference='Synthetic reference')])
+        doc.insert()
+        self.assertEqual(doc.items[0].packaging, 'Bulk')
+
+        # Treat the saved document as a pre-policy record with the full legacy
+        # schedule and specification data expected by the historical workflow.
+        frappe.db.set_value(doc.doctype, doc.name, {
+            'entry_policy_version': None,
+            'terms_version': None,
+            'terms_snapshot': None,
+            'contract_scope_version': None,
+        })
+        doc.reload()
+        self.complete_legacy_schedule(doc)
+        doc.timezone = 'Asia/Baghdad'
+        doc.business_days = 'Monday,Tuesday,Wednesday,Thursday,Friday'
+        doc.opens_at = '09:00:00'
+        doc.closes_at = '17:00:00'
+        doc.holiday_list = 'PZ Synthetic Calendar'
+        doc.set('specifications', [])
+        doc.append('specifications', dict(item_code='Bitumen - Bulk',
+            property='Penetration', unit='dmm', test_method='Synthetic method',
+            requirement='60-70 (demo only)'))
+        doc.save()
+
+        doc.items[0].item_code = 'Bitumen - Drum'
+        doc.items[0].packaging = 'Bulk'
+        doc.specifications[0].item_code = 'Bitumen - Drum'
+        doc.save()
+        doc.reload()
+        self.assertEqual(doc.items[0].packaging, 'Drum')
+
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(frappe.get_print(doc.doctype, doc.name,
+            print_format='Standard'), 'html.parser')
+        product_cell = soup.select('.contract section')[0].select('table')[1].select(
+            'tbody tr')[0].select('td')[1]
+        self.assertIn('· Drum', product_cell.get_text(' ', strip=True))
+
+        # An unchanged legacy line keeps its persisted package snapshot.
+        frappe.db.set_value('PZ Contract Item', doc.items[0].name,
+            'packaging', 'Historical legacy snapshot')
+        doc.reload()
+        doc.save()
+        self.assertEqual(doc.items[0].packaging, 'Historical legacy snapshot')
+
+        old_row = doc.items[0]
+        old_row_name = old_row.name
+        replacement = dict(item_code=old_row.item_code, qty=old_row.qty,
+            uom=old_row.uom, rate=old_row.rate, grade_master=old_row.grade_master,
+            grade=old_row.grade, packaging='Historical legacy snapshot',
+            specification_reference=old_row.specification_reference)
+        doc.set('items', [])
+        doc.append('items', replacement)
+        doc.save()
+        doc.reload()
+        self.assertNotEqual(doc.items[0].name, old_row_name)
+        self.assertEqual(doc.items[0].packaging, 'Drum')
+
+        doc.items[0].item_code = 'PZ Synthetic Bitumen'
+        doc.items[0].packaging = 'Drum'
+        doc.specifications[0].item_code = 'PZ Synthetic Bitumen'
+        doc.save()
+        doc.reload()
+        self.assertIsNone(doc.items[0].packaging)
+
+        soup = BeautifulSoup(frappe.get_print(doc.doctype, doc.name,
+            print_format='Standard'), 'html.parser')
+        product_cell = soup.select('.contract section')[0].select('table')[1].select(
+            'tbody tr')[0].select('td')[1]
+        product_text = product_cell.get_text(' ', strip=True)
+        self.assertIn('PZ Synthetic Bitumen', product_text)
+        self.assertNotIn('·', product_text)
+        self.assertNotIn('None', product_text)
 
     def test_legacy_schedule_cannot_bypass_missing_inputs_but_v2_has_no_schedule(self):
         legacy = contract(insert=False, terms_version=None, contract_scope_version=None,
@@ -395,22 +481,46 @@ class TestPZSalesContract(IntegrationTestCase):
         with self.assertRaisesRegex(frappe.ValidationError, 'enabled Incoterm location'):
             contract(contract_location=location.name)
 
-    def test_packaging_is_backfilled_from_an_exact_item_mapping_and_mismatch_is_rejected(self):
-        if not frappe.db.exists('Item', 'Bitumen - Bulk'):
-            item = frappe.copy_doc(frappe.get_doc('Item', 'PZ Synthetic Bitumen'))
-            item.item_code = 'Bitumen - Bulk'
-            item.item_name = 'Bitumen - Bulk'
-            item.insert()
+    def test_packaging_is_derived_after_item_change_and_printed_from_saved_value(self):
+        for item_code in ('Bitumen - Bulk', 'Bitumen - Drum'):
+            if not frappe.db.exists('Item', item_code):
+                item = frappe.copy_doc(frappe.get_doc('Item', 'PZ Synthetic Bitumen'))
+                item.item_code = item_code
+                item.item_name = item_code
+                item.insert()
+
         doc = contract(insert=False)
         doc.items[0].item_code = 'Bitumen - Bulk'
-        doc.items[0].packaging = None
+        doc.items[0].packaging = 'Untrusted input'
         doc.insert()
         self.assertEqual(doc.items[0].packaging, 'Bulk')
-        invalid = contract(insert=False)
-        invalid.items[0].item_code = 'Bitumen - Bulk'
-        invalid.items[0].packaging = 'Drum'
-        with self.assertRaisesRegex(frappe.ValidationError, 'must be Bulk'):
-            invalid.insert()
+
+        doc.items[0].item_code = 'Bitumen - Drum'
+        doc.items[0].packaging = 'Bulk'
+        doc.save()
+        doc.reload()
+        self.assertEqual(doc.items[0].packaging, 'Drum')
+
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(frappe.get_print(doc.doctype, doc.name, print_format='Standard'), 'html.parser')
+        product_cell = soup.select('.contract section')[0].select('table')[1].select('tbody tr')[0].select('td')[1]
+        product_text = product_cell.get_text(' ', strip=True)
+        self.assertIn('Bitumen - Drum', product_text)
+        self.assertIn('· Drum', product_text)
+
+    def test_unknown_item_packaging_is_blank_and_not_claimed_in_print(self):
+        doc = contract(insert=False)
+        doc.items[0].packaging = 'Synthetic drums'
+        doc.insert()
+        self.assertIsNone(doc.items[0].packaging)
+
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(frappe.get_print(doc.doctype, doc.name, print_format='Standard'), 'html.parser')
+        product_cell = soup.select('.contract section')[0].select('table')[1].select('tbody tr')[0].select('td')[1]
+        product_text = product_cell.get_text(' ', strip=True)
+        self.assertIn('PZ Synthetic Bitumen', product_text)
+        self.assertNotIn('·', product_text)
+        self.assertNotIn('None', product_text)
 
     def test_contract_location_create_permission_is_limited_to_managers(self):
         user = 'pz-location-reader@example.invalid'
@@ -791,6 +901,9 @@ class TestPZSalesContract(IntegrationTestCase):
         d=contract(submit=True, seller_signatory=None, cash_receiving_account=None)
         self.assertEqual(d.seller_signatory, 'Synthetic approved signer at creation')
         self.assertIsNone(d.cash_receiving_account)
+        frappe.db.set_value('PZ Contract Item', d.items[0].name,
+            'packaging', 'Historical amendment snapshot')
+        d.reload()
         settings.seller_signatory = 'Synthetic later default; never rewrite an agreed contract'
         settings.cash_receiving_account = 'PZ Synthetic Cash - PZT'
         settings.save()
@@ -817,6 +930,7 @@ class TestPZSalesContract(IntegrationTestCase):
         frappe.set_user('Administrator')
         amendment.insert()
         self.assertEqual(amendment.terms_version, CURRENT_TERMS_VERSION)
+        self.assertEqual(amendment.items[0].packaging, 'Historical amendment snapshot')
         self.assertEqual(amendment.governing_law, 'Synthetic historical law retained on amendment')
         self.assertEqual(amendment.approval_received, '2026-10-01T09:00:00+03:00')
         self.assertEqual(amendment.advance_deadline, '2026-10-02T09:00:00+03:00')

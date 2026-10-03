@@ -71,6 +71,8 @@ test("legacy contracts retain access to historical specifications", async () => 
   await ui.refresh();
   assert.equal(ui.fieldProperties["specifications_section.hidden"], false);
   assert.equal(ui.fieldProperties["specifications.hidden"], false);
+  assert.equal(ui.fieldProperties["conversion_rate.hidden"], false);
+  assert.equal(ui.fieldProperties["selling_price_list.hidden"], false);
 });
 
 test("Item lookups ignore stale, cleared, and deleted child rows", async () => {
@@ -112,22 +114,26 @@ test("Grade Link snapshots follow the latest active selection and clearing", () 
   assert.equal(row.grade, null);
 });
 
-test("packaging lookups preserve explicit edits, unknown products and historical snapshots", async () => {
+test("packaging is derived after product changes and historical snapshots are preserved", async () => {
   const ui = desk();
   const row = { doctype: "PZ Contract Item", name: "packaging-line", item_code: "Bitumen - Bulk", packaging: null };
   ui.frm.doc.items = [row]; ui.locals["PZ Contract Item"][row.name] = row;
   ui.childEvents.item_code(ui.frm, row.doctype, row.name);
-  row.packaging = "User edit";
   await ui.respond(0, { item_name: row.item_code, stock_uom: "Tonne", packaging: "Bulk" });
-  assert.equal(row.packaging, "User edit");
+  assert.equal(row.packaging, "Bulk");
+  row.item_code = "Bitumen - Drum";
+  ui.childEvents.item_code(ui.frm, row.doctype, row.name);
+  assert.equal(row.packaging, null, "changing the Item clears the previous packaging snapshot");
+  await ui.respond(1, { item_name: row.item_code, stock_uom: "Tonne", packaging: "Drum" });
+  assert.equal(row.packaging, "Drum");
   row.item_code = "Unknown product";
   ui.childEvents.item_code(ui.frm, row.doctype, row.name);
-  await ui.respond(1, { item_name: row.item_code, stock_uom: "Tonne", packaging: null });
+  await ui.respond(2, { item_name: row.item_code, stock_uom: "Tonne", packaging: null });
   assert.equal(row.packaging, null);
   row.item_code = "Bitumen - Drum";
   ui.childEvents.item_code(ui.frm, row.doctype, row.name);
   ui.frm.doc = newDoc("another-doc", { items: [row] });
-  await ui.respond(2, { item_name: "Bitumen - Drum", packaging: "Drum" });
+  await ui.respond(3, { item_name: "Bitumen - Drum", packaging: "Drum" });
   assert.equal(row.packaging, null, "navigation invalidates the old document response");
 
   const history = desk(newDoc("saved", { __islocal: 0 }));

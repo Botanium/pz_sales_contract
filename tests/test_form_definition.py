@@ -166,6 +166,25 @@ class TestContractFormDefinition(unittest.TestCase):
         for fieldname in ("parties", "commercial", "delivery", "specs"):
             self.assertFalse(fields[fieldname].get("collapsible"))
 
+    def test_new_entry_controls_and_packaging_start_hidden_in_doctype_metadata(self):
+        contract_fields = {field["fieldname"]: field for field in self.contract["fields"]}
+        for fieldname in ("conversion_rate", "selling_price_list"):
+            self.assertEqual(contract_fields[fieldname].get("hidden"), 1)
+            self.assertFalse(contract_fields[fieldname].get("reqd"))
+        self.assertIn('frm.set_df_property(fieldname, "hidden", usdEntry)', self.javascript)
+
+        item_schema = json.loads((ROOT / "pz_sales_contract/sales_contracts/doctype/pz_contract_item/pz_contract_item.json").read_text())
+        packaging = next(field for field in item_schema["fields"] if field["fieldname"] == "packaging")
+        self.assertEqual(packaging.get("hidden"), 1)
+        self.assertEqual(packaging.get("read_only"), 1)
+        self.assertFalse(packaging.get("reqd"))
+        self.assertFalse(packaging.get("in_list_view"))
+        legacy_required = python_constant(CONTRACT_PY, "LEGACY_REQUIRED_ITEM_FIELDS")
+        self.assertNotIn("packaging", legacy_required)
+
+        template = (ROOT / "pz_sales_contract/templates/contract.html").read_text()
+        self.assertEqual(template.count("{% if row.packaging %} · {{ row.packaging|e }}{% endif %}"), 2)
+
     def test_new_scope_policy_keeps_historical_contract_values_and_protects_sales_order(self):
         fields = {field["fieldname"]: field for field in self.contract["fields"]}
         for fieldname in ("contract_scope_version", "cancelled_sales_order_reference"):

@@ -8,7 +8,8 @@ from frappe.utils import getdate
 from pz_sales_contract.calendar import add_open_hours, schedule
 from pz_sales_contract.contract_terms import CURRENT_TERMS_VERSION, snapshot_for_new_contract
 from pz_sales_contract.entry_policy import (
-    ENTRY_POLICY_VERSION, apply_item_packaging, apply_usd_policy, uses_entry_policy, validate_location,
+    ENTRY_POLICY_VERSION, apply_item_packaging, apply_usd_policy,
+    find_previous_item_row, uses_entry_policy, validate_location,
 )
 from pz_sales_contract.sales_contracts.doctype.pz_contract_defaults.pz_contract_defaults import (
     COMPANY_DEFAULT_FIELDS,
@@ -57,7 +58,7 @@ LEGACY_REQUIRED_CONTRACT_FIELDS = (
     'account_iban', 'swift_reference',
 )
 LEGACY_REQUIRED_ITEM_FIELDS = (
-    'item_code', 'grade', 'packaging', 'qty', 'uom', 'rate', 'specification_reference',
+    'item_code', 'grade', 'qty', 'uom', 'rate', 'specification_reference',
 )
 LEGACY_REQUIRED_SPECIFICATION_FIELDS = ('item_code', 'property', 'test_method', 'requirement')
 
@@ -304,7 +305,7 @@ class PZSalesContract(Document):
         apply_usd_policy(self, entry_source)
         validate_location(self, entry_source)
         self.validate_specifications()
-        self.validate_links_and_snapshots(old)
+        self.validate_links_and_snapshots(old, entry_source)
         self.validate_schedule()
         self.validate_incoterm(old)
         order = self.build_order()
@@ -336,7 +337,7 @@ class PZSalesContract(Document):
                         'base_tax_amount_after_discount_amount','total','base_total']:
                 row.set(key, calculated.get(key))
 
-    def validate_links_and_snapshots(self, old=None):
+    def validate_links_and_snapshots(self, old=None, packaging_source=None):
         customer = frappe.get_doc('Customer', self.customer)
         customer.check_permission('read')
         if customer.disabled:
@@ -372,14 +373,18 @@ class PZSalesContract(Document):
                 if (account.account_currency or currency) != self.currency:
                     frappe.throw('Nominated receiving accounts must use the contract currency')
         self.validate_grade_masters(old)
+        saved_items = packaging_source.items if packaging_source else []
         for item in self.items:
             master = frappe.get_doc('Item', item.item_code)
             master.check_permission('read')
             if master.disabled or not master.is_sales_item or item.qty <= 0 or item.rate <= 0:
                 frappe.throw('Choose an enabled sales Item and positive quantity/rate')
-            if uses_entry_policy(self):
-                previous = next((r for r in (old.items if old else []) if r.name == item.name), None)
-                apply_item_packaging(item, previous)
+            # Frappe amendments copy child rows with new names. In that copy
+            # flow, positional matching also requires the source line content
+            # to match; a replacement row must derive a fresh value.
+            previous = find_previous_item_row(item, saved_items,
+                allow_copy_match=bool(self.is_new() and self.amended_from))
+            apply_item_packaging(item, previous)
             factor = 1 if item.uom == master.stock_uom else next((r.conversion_factor for r in master.uoms if r.uom == item.uom), None)
             if not factor or factor <= 0:
                 frappe.throw(f'No ERP UOM conversion exists for {item.item_code}: {item.uom}')

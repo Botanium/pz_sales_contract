@@ -35,14 +35,28 @@ def uses_entry_policy(doc):
     return doc.get('entry_policy_version') == ENTRY_POLICY_VERSION
 
 
+def find_previous_item_row(item, saved_items, allow_copy_match=False):
+    name = item.get('name')
+    if name:
+        previous = next((row for row in saved_items if row.get('name') == name), None)
+        if previous:
+            return previous
+    if not allow_copy_match:
+        return None
+    copied_fields = ('grade_master', 'grade', 'qty', 'uom', 'rate', 'specification_reference')
+    return next((row for row in saved_items
+        if row.idx == item.idx and row.item_code == item.item_code
+        and all(row.get(fieldname) == item.get(fieldname) for fieldname in copied_fields)), None)
+
+
 def apply_item_packaging(item, previous=None):
-    if previous and previous.item_code == item.item_code and previous.packaging == item.packaging:
+    if previous and previous.item_code == item.item_code:
+        # The stored value is a historical snapshot for an unchanged Item.
+        item.packaging = previous.packaging
         return
-    packaging = ITEM_PACKAGING.get(item.item_code)
-    if packaging and item.packaging and item.packaging != packaging:
-        frappe.throw(f'Packaging for {item.item_code} must be {packaging}')
-    if packaging:
-        item.packaging = packaging
+    # New and changed Items always use the verified Item ID mapping. Unknown
+    # Items stay blank; a stale/forged client value is never printed as fact.
+    item.packaging = ITEM_PACKAGING.get(item.item_code)
 
 
 def usd_conversion_rate(company_currency, transaction_date):
