@@ -87,7 +87,7 @@ test("Grade Link snapshots follow the latest active selection and clearing", () 
   ui.frm.doc.items = [row]; ui.locals["PZ Contract Item"][row.name] = row;
   row.grade_master = "Grade A"; ui.childEvents.grade_master(ui.frm, row.doctype, row.name);
   row.grade_master = "Grade B"; ui.childEvents.grade_master(ui.frm, row.doctype, row.name);
-  assert.deepEqual(ui.lookups[0].fields, ["disabled"]);
+  assert.deepEqual([...ui.lookups[0].fields], ["disabled"]);
   ui.lookups[1].callback({ disabled: 0 });
   ui.lookups[0].callback({ disabled: 0 });
   assert.equal(row.grade, "Grade B");
@@ -112,10 +112,10 @@ test("each New contract loads defaults in a reused Desk form", async () => {
 test("new contracts offer the base and configured Incoterms without silently selecting one", async () => {
   const ui = desk();
   const options = () => ui.queries.incoterm().filters.name[1];
-  assert.deepEqual(options(), ["EXW", "FOB", "CIF"]);
+  assert.deepEqual([...options()], ["EXW", "FOB", "CIF"]);
   assert.equal(ui.frm.doc.incoterm, undefined);
   await ui.refresh(); await ui.respond();
-  assert.deepEqual(options(), ["EXW", "FOB", "CIF", "FCA"]);
+  assert.deepEqual([...options()], ["EXW", "FOB", "CIF", "FCA"]);
   assert.equal(ui.frm.doc.incoterm, undefined);
 });
 
