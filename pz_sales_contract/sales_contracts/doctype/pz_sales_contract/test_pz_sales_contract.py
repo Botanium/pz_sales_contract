@@ -188,6 +188,17 @@ class TestPZSalesContract(IntegrationTestCase):
         finally:
             frappe.db.set_value('Bitumen Grade', grade_name, 'disabled', original_disabled or 0)
 
+    def test_simplified_contract_cannot_submit_after_grade_link_was_cleared(self):
+        d = contract()
+        # The unchanged text snapshot may remain on the draft for history,
+        # but it must not turn a new v2 line into a free-text line that can
+        # create a Sales Order on submission.
+        d.items[0].grade_master = None
+        d.save()
+        with self.assertRaises(frappe.ValidationError):
+            d.submit()
+        self.assertFalse(d.sales_order)
+
     def test_unchanged_disabled_grade_remains_savable_as_history(self):
         d = contract(submit=True)
         grade_name = d.items[0].grade_master

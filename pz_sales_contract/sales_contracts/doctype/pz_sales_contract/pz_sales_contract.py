@@ -367,6 +367,8 @@ class PZSalesContract(Document):
         sales_order_grade_field_exists = frappe.get_meta('Sales Order Item').has_field('custom_bitumen_grade')
         for row in self.items:
             previous = previous_line(row)
+            if require_active and self.uses_item_only_draft_order() and not row.grade_master:
+                frappe.throw('Each simplified contract line requires an active Bitumen Grade master before submission')
             unchanged_snapshot = bool(
                 previous and previous.item_code == row.item_code
                 and previous.grade_master == row.grade_master
