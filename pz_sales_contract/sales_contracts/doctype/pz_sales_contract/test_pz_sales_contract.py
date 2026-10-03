@@ -298,8 +298,10 @@ class TestPZSalesContract(IntegrationTestCase):
         self.clear_synthetic_company_defaults()
         from frappe.model.document import Document
 
-        actual_defaults = frappe.get_doc(dict(doctype='PZ Sales Contract', company=COMPANY))
-        native_defaults = frappe.get_doc(dict(doctype='PZ Sales Contract', company=COMPANY))
+        # insert() marks documents local before applying defaults. Match that
+        # lifecycle when calling the helper directly in this comparison.
+        actual_defaults = frappe.get_doc(dict(doctype='PZ Sales Contract', company=COMPANY, __islocal=1))
+        native_defaults = frappe.get_doc(dict(doctype='PZ Sales Contract', company=COMPANY, __islocal=1))
         Document._set_defaults(native_defaults)
         actual_defaults._set_defaults()
         for fieldname in set(COMPANY_DEFAULT_FIELDS) - {'currency', 'conversion_rate', 'selling_price_list'}:
