@@ -7,6 +7,7 @@ import frappe
 
 
 LEGACY_TERMS_V1_SHA256 = 'af5bca40d97909791820b4eb7d2031f4765c863e7d0cad44eef8d5ed5c3937f7'
+CURRENT_TERMS_VERSION = 'v2'
 
 
 def _app_path():

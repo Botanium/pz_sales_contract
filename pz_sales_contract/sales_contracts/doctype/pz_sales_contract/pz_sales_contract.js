@@ -549,6 +549,9 @@ frappe.ui.form.on("PZ Sales Contract", {
   },
   refresh(frm) {
     ensureCompanyDefaultsDocument(frm);
+    const simplifiedContract = frm.doc.terms_version === "v2" || (frm.is_new() && !frm.doc.amended_from);
+    frm.set_df_property("specifications_section", "hidden", simplifiedContract);
+    frm.set_df_property("specifications", "hidden", simplifiedContract);
     for (const row of frm.doc.items || []) {
       contractChildLookupState(row).gradeMaster = row.grade_master || null;
     }

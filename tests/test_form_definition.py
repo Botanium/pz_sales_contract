@@ -106,13 +106,23 @@ class TestContractFormDefinition(unittest.TestCase):
 
     def test_empty_specifications_do_not_print_an_empty_appendix(self):
         template = (ROOT / "pz_sales_contract/templates/contract.html").read_text()
-        self.assertIn("{% if doc.specifications %}<h2>Appendix A · Agreed Product Specification</h2>", template)
+        simplified = template.split("{% if simple_print %}", 1)[1].split("{% else %}", 1)[0]
+        legacy = template.split("{% if simple_print %}", 1)[1].split("{% else %}", 1)[1].rsplit("{% endif %}", 1)[0]
+        self.assertNotIn("Appendix A", simplified)
+        self.assertNotIn("Commercial Schedule", simplified)
+        self.assertNotIn("Order and Collection Record", simplified)
+        self.assertNotIn("24 business hours", simplified.lower())
+        self.assertNotIn("charge", simplified.lower())
+        self.assertIn("applicable taxes, if any", simplified.lower())
+        self.assertIn("{% if doc.specifications %}<h2>Appendix A · Agreed Product Specification</h2>", legacy)
         self.assertNotIn("No agreed product specifications are recorded", template)
         self.assertNotIn("specification_reference", template)
 
-    def test_contract_terms_are_versioned_and_the_print_draft_is_inactive(self):
+    def test_contract_terms_are_versioned_with_simplified_active_copy(self):
         snapshot = next(field for field in self.contract["fields"] if field["fieldname"] == "terms_snapshot")
         self.assertEqual((snapshot["fieldtype"], snapshot.get("hidden"), snapshot.get("read_only")), ("Long Text", 1, 1))
+        version = next(field for field in self.contract["fields"] if field["fieldname"] == "terms_version")
+        self.assertEqual((version["fieldtype"], version.get("hidden"), version.get("read_only")), ("Data", 1, 1))
         frozen_terms = json.loads((ROOT / "pz_sales_contract/terms_versions/v1.json").read_text())
         canonical_v1 = json.dumps(frozen_terms, ensure_ascii=False, separators=(",", ":"))
         self.assertEqual(
@@ -120,15 +130,26 @@ class TestContractFormDefinition(unittest.TestCase):
             python_constant(CONTRACT_TERMS_PY, "LEGACY_TERMS_V1_SHA256"),
         )
         active_terms = json.loads(TERMS_JSON.read_text())
-        self.assertTrue(active_terms and all(isinstance(clause, str) for clause in active_terms))
+        self.assertEqual(len(active_terms), 2)
+        self.assertTrue(all(isinstance(clause, str) for clause in active_terms))
+        self.assertNotEqual(active_terms, frozen_terms)
+        self.assertIn("discounted goods amount only", active_terms[1])
+        self.assertIn("linked Sales Order or invoice", active_terms[1])
+        new_terms = " ".join(active_terms).lower()
+        for prohibited in ("24 business hours", "penalty", "charge", "demurrage"):
+            self.assertNotIn(prohibited, new_terms)
         terms_source = CONTRACT_TERMS_PY.read_text()
         self.assertIn("_legacy_terms_snapshot()", terms_source)
         new_contract_path = terms_source.split("def clauses_for_contract", 1)[0]
         self.assertIn("return _validated_snapshot((_app_path() / 'terms.json').read_text(encoding='utf-8'))", new_contract_path)
         self.assertIn("clauses_for_contract(doc)", (ROOT / "pz_sales_contract/printing.py").read_text())
+        self.assertIn("simple_print = doc.get('terms_version') == CURRENT_TERMS_VERSION", (ROOT / "pz_sales_contract/printing.py").read_text())
+        self.assertEqual(python_constant(CONTRACT_TERMS_PY, "CURRENT_TERMS_VERSION"), "v2")
+        self.assertIn('frm.set_df_property("specifications", "hidden", simplifiedContract)', self.javascript)
+        self.assertIn("Product specification rows are not part of the simplified contract version", self.controller)
         review_copy = (ROOT / "docs/contract-print-copy-review.md").read_text()
-        self.assertIn("not active as a replacement print layout", review_copy)
-        self.assertIn("Confirmed workflow lines — legal review remains open", review_copy)
+        self.assertIn("## Exact new-contract wording", review_copy)
+        self.assertIn("The Contract Amount is the discounted goods amount only", review_copy)
 
     def test_primary_fields_stay_discoverable_and_advanced_sections_collapse(self):
         field_order = self.contract["field_order"]
@@ -139,7 +160,7 @@ class TestContractFormDefinition(unittest.TestCase):
             self.assertEqual(fields[fieldname].get("hidden"), 1)
             self.assertFalse(fields[fieldname].get("reqd"))
         self.assertIn("enter delivery date on the linked Sales Order", fields["delivery_date"].get("description", ""))
-        self.assertIn("enter applicable taxes and charges on the linked Sales Order", fields["taxes"].get("description", ""))
+        self.assertIn("record applicable taxes on the linked Sales Order", fields["taxes"].get("description", ""))
         for fieldname in ("payment", "records", "internal"):
             self.assertEqual(fields[fieldname].get("collapsible"), 1)
         for fieldname in ("parties", "commercial", "delivery", "specs"):
@@ -326,14 +347,15 @@ class TestContractFormDefinition(unittest.TestCase):
         self.assertIn("clearCompanySpecificValues(frm)", source)
         self.assertIn("loadCompanyDefaults(frm, currentCompany)", source)
 
-    def test_all_15_print_clauses_are_preserved(self):
-        clauses = json.loads(TERMS_JSON.read_text())
+    def test_all_15_legacy_clauses_remain_in_the_frozen_print(self):
+        clauses = json.loads((ROOT / "pz_sales_contract/terms_versions/v1.json").read_text())
         self.assertEqual(len(clauses), 15)
         for number, clause in enumerate(clauses, start=1):
             self.assertTrue(clause.startswith(f"{number}. "))
         template = (ROOT / "pz_sales_contract/templates/contract.html").read_text()
-        self.assertIn("clauses[start:end]", template)
-        self.assertIn("[(0,8),(8,15)]", template)
+        legacy = template.split("{% if simple_print %}", 1)[1].split("{% else %}", 1)[1]
+        self.assertIn("clauses[start:end]", legacy)
+        self.assertIn("[(0,8),(8,15)]", legacy)
 
 
 if __name__ == "__main__":

@@ -71,9 +71,8 @@ def export():
                 raise RuntimeError('Draft header missing from continuation page')
         if 'Amount in words: None' in text:
             raise RuntimeError('Missing amount in words')
-        if 'Synthetic closure' not in text:
-            raise RuntimeError('Holiday schedule missing')
-        for expected in ['15. Authority','Force Majeure','Signatures','Commercial Schedule','Payment Instructions','60-70']:
+        for expected in ['1. Contract Documents','2. Contract Amount and Payment Split',
+            'Signatures','Payment Instructions','Contract Amount','PZ-SYNTHETIC-60-70']:
             if expected not in text:
                 raise RuntimeError('Missing PDF content: '+expected)
         (output/(label+'.pdf')).write_bytes(pdf)

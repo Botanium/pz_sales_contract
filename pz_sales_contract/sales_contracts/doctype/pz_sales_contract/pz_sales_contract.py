@@ -6,7 +6,7 @@ from frappe.model.document import Document
 from frappe.utils import getdate
 
 from pz_sales_contract.calendar import add_open_hours, schedule
-from pz_sales_contract.contract_terms import snapshot_for_new_contract
+from pz_sales_contract.contract_terms import CURRENT_TERMS_VERSION, snapshot_for_new_contract
 from pz_sales_contract.sales_contracts.doctype.pz_contract_defaults.pz_contract_defaults import (
     COMPANY_DEFAULT_FIELDS,
     get_allowed_contract_incoterms,
@@ -93,12 +93,17 @@ class PZSalesContract(Document):
             self.first_family = original.first_family
             # Amendments retain the source contract's delivery/tax lifecycle.
             self.contract_scope_version = original.get('contract_scope_version')
+            # Amendments retain the source print/terms version. A legacy source
+            # without a version stays on its historical print layout.
+            self.terms_version = original.get('terms_version')
         else:
             original = None
             self.first_family = frappe.generate_hash(length=20)
             self.contract_scope_version = ITEM_ONLY_DRAFT_SO_SCOPE
-            # New contracts never accept hidden legacy schedule data through
+            self.terms_version = CURRENT_TERMS_VERSION
+            # New v2 families never accept hidden legacy schedule data through
             # Desk defaults, imports, or REST payloads.
+            self._clear_historical_contract_fields()
             self.delivery_date = None
             self.set('taxes', [])
             self.tax_total = 0
@@ -226,10 +231,14 @@ class PZSalesContract(Document):
             if blank and configured_value not in (None, ''):
                 self.set(fieldname, configured_value)
 
+    def _clear_historical_contract_fields(self):
+        for fieldname in HISTORICAL_CONTRACT_FIELDS:
+            self.set(fieldname, None)
+
     def validate(self):
         old = self.get_doc_before_save()
         if old:
-            for key in ['customer', 'company', 'first_family', 'sales_order', 'amended_from', 'contract_scope_version']:
+            for key in ['customer', 'company', 'first_family', 'sales_order', 'amended_from', 'contract_scope_version', 'terms_version']:
                 if self.get(key) != old.get(key):
                     frappe.throw(f'{key} cannot be changed after creation')
             if self.terms_snapshot != old.terms_snapshot:
@@ -237,6 +246,9 @@ class PZSalesContract(Document):
         elif self.is_new():
             # Reject forged readonly internal values from REST/import as well as Desk.
             self.sales_order = None
+        if self.get('terms_version') == CURRENT_TERMS_VERSION and not self.amended_from:
+            # Also discard hidden legacy schedule values supplied on later saves.
+            self._clear_historical_contract_fields()
         if self.uses_item_only_draft_order():
             # A new-scope contract ignores forged values for hidden legacy
             # fields. Taxes and delivery date are completed on its linked SO.
@@ -245,6 +257,8 @@ class PZSalesContract(Document):
             self.tax_total = 0
         elif not self.delivery_date:
             frappe.throw('Legacy contracts require their saved planned delivery date')
+        if self.get('terms_version') == CURRENT_TERMS_VERSION and self.specifications:
+            frappe.throw('Product specification rows are not part of the simplified contract version')
         self.validate_links_and_snapshots(old)
         self.validate_schedule()
         self.validate_incoterm(old)

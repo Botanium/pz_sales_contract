@@ -85,6 +85,7 @@
     "first_family",
     "amended_from",
     "terms_snapshot",
+    "terms_version",
     "contract_scope_version",
     "cancelled_sales_order_reference"
   ],
@@ -255,7 +256,7 @@
       "fieldtype": "Table",
       "options": "Sales Taxes and Charges",
       "hidden": 1,
-      "description": "Retained for existing contracts; enter applicable taxes and charges on the linked Sales Order for new contracts."
+      "description": "Retained for existing contracts; record applicable taxes on the linked Sales Order for new contracts."
     },
     {
       "fieldname": "subtotal",
@@ -586,7 +587,7 @@
       "options": "Sales Order",
       "read_only": 1,
       "no_copy": 1,
-      "description": "New-scope contracts create this order as Draft. Enter the delivery date and applicable taxes/charges on the Sales Order, then submit it manually."
+      "description": "New-scope contracts create this order as Draft. Enter the delivery date and applicable taxes on the Sales Order, then submit it manually."
     },
     {
       "fieldname": "first_family",
@@ -627,6 +628,13 @@
       "read_only": 1,
       "hidden": 1,
       "no_copy": 1
+    },
+    {
+      "fieldname": "terms_version",
+      "label": "Contract terms version (internal)",
+      "fieldtype": "Data",
+      "read_only": 1,
+      "hidden": 1
     }
   ],
   "permissions": [

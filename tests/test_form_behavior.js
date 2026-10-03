@@ -19,7 +19,7 @@ const newDoc = (name, extra = {}) => ({
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 function desk(doc = newDoc("new-1")) {
-  const handlers = {}, requests = [], lookups = [], alerts = [], queries = {};
+  const handlers = {}, requests = [], lookups = [], alerts = [], queries = {}, fieldProperties = {};
   const locals = { "PZ Contract Item": {} };
   const frappe = {
     ui: { form: { on: (doctype, events) => { handlers[doctype] = events; } } },
@@ -37,6 +37,7 @@ function desk(doc = newDoc("new-1")) {
   vm.runInNewContext(script, { frappe, __: (value) => value, Promise, Set, WeakMap, locals });
   const frm = {
     doc, fields_dict: {}, is_new() { return Boolean(this.doc.__islocal); },
+    set_df_property(fieldname, property, value) { fieldProperties[`${fieldname}.${property}`] = value; },
     set_query(fieldname, ...args) { queries[fieldname] = args.at(-1); }, set_intro() {}, add_custom_button() {},
     async set_value(key, value) {
       const values = typeof key === "string" ? { [key]: value } : key;
@@ -50,13 +51,27 @@ function desk(doc = newDoc("new-1")) {
   };
   const events = handlers["PZ Sales Contract"];
   events.setup(frm);
-  return { frm, events, childEvents: handlers["PZ Contract Item"], requests, lookups, locals, alerts, queries,
+  return { frm, events, childEvents: handlers["PZ Contract Item"], requests, lookups, locals, alerts, queries, fieldProperties,
     async refresh() { events.refresh(frm); await flush(); },
     async respond(index = requests.length - 1, values = profile) {
       requests[index].callback({ message: values }); await flush();
     },
-  };
+};
 }
+
+test("new simplified contracts hide the specification editor", async () => {
+  const ui = desk();
+  await ui.refresh();
+  assert.equal(ui.fieldProperties["specifications_section.hidden"], true);
+  assert.equal(ui.fieldProperties["specifications.hidden"], true);
+});
+
+test("legacy contracts retain access to historical specifications", async () => {
+  const ui = desk(newDoc("legacy-1", { __islocal: 0, terms_version: null }));
+  await ui.refresh();
+  assert.equal(ui.fieldProperties["specifications_section.hidden"], false);
+  assert.equal(ui.fieldProperties["specifications.hidden"], false);
+});
 
 test("Item and Grade lookups ignore stale, cleared, and deleted child rows", () => {
   const ui = desk();
