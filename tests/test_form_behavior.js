@@ -134,6 +134,32 @@ test("new contracts offer the base and configured Incoterms without silently sel
   assert.equal(ui.frm.doc.incoterm, undefined);
 });
 
+test("company changes clear a disallowed Incoterm and preserve allowed selections", async () => {
+  const ui = desk();
+  const options = () => [...ui.queries.incoterm().filters.name[1]];
+  await ui.refresh(); await ui.respond();
+  await ui.frm.set_value("incoterm", "FCA");
+  await ui.frm.set_value("company", "Another Seller"); await flush();
+  assert.equal(options().includes("FCA"), false);
+  await ui.respond(1, { ...profile, allowed_incoterms: ["DAP"] });
+  assert.equal(ui.frm.doc.incoterm, null);
+  assert.deepEqual(options(), ["EXW", "FOB", "CIF", "DAP"]);
+
+  await ui.frm.set_value("incoterm", "FOB");
+  await ui.frm.set_value("company", "Third Seller"); await flush();
+  await ui.respond(2, { ...profile, allowed_incoterms: [] });
+  assert.equal(ui.frm.doc.incoterm, "FOB");
+  await ui.respond(0); // A stale company response must not restore its choices.
+  assert.deepEqual(options(), ["EXW", "FOB", "CIF"]);
+});
+
+test("saved contracts and amendments retain their historical Incoterm option", () => {
+  for (const extra of [{ __islocal: 0 }, { amended_from: "Cancelled Original" }]) {
+    const ui = desk(newDoc("historical", { incoterm: "FCA", ...extra }));
+    assert.equal(ui.queries.incoterm().filters.name[1].includes("FCA"), true);
+  }
+});
+
 for (const replacement of [newDoc("amendment", { amended_from: "Cancelled Original" }),
   newDoc("saved", { __islocal: 0 }), newDoc("second-new")]) {
   test(`a delayed response cannot change another document: ${replacement.name}`, async () => {

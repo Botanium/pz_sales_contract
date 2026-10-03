@@ -359,6 +359,14 @@ function loadCompanyDefaults(frm, expectedCompany, requestId) {
             ...defaultContractIncoterms,
             ...(Array.isArray(configured.allowed_incoterms) ? configured.allowed_incoterms : []),
           ])];
+          if (doc.incoterm && !frm._pzContractIncoterms.includes(doc.incoterm)) {
+            await frm.set_value("incoterm", null);
+            if (!isCurrent()) return;
+            frappe.show_alert({
+              message: __("Choose an Incoterm allowed for the selected company."),
+              indicator: "orange",
+            });
+          }
           const values = {};
           const currencyCompatible = !isMissingValue("currency", configured.currency)
             && (isMissingValue("currency", frm.doc.currency) || frm.doc.currency === configured.currency);
@@ -523,7 +531,7 @@ frappe.ui.form.on("PZ Sales Contract", {
     frm.set_query("contact_person", () => ({ query: "frappe.contacts.doctype.contact.contact.contact_query", filters: { link_doctype: "Customer", link_name: frm.doc.customer } }));
     frm.set_query("incoterm", () => ({ filters: { name: ["in", [...new Set([
       ...(frm._pzContractIncoterms || defaultContractIncoterms),
-      ...(frm.doc.incoterm ? [frm.doc.incoterm] : []),
+      ...((!frm.is_new() || frm.doc.amended_from) && frm.doc.incoterm ? [frm.doc.incoterm] : []),
     ])]] } }));
     frm.set_query("item_code", "items", () => ({ filters: { disabled: 0, is_sales_item: 1 } }));
     frm.set_query("grade_master", "items", () => ({ filters: { disabled: 0 } }));
