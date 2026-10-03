@@ -4,7 +4,7 @@ This handoff is for a disposable v16 test site on the MacBook. Do not run these 
 
 ## Automated synthetic suite
 
-From the test bench, run the command already used by CI:
+From the test bench, run the command already used by CI. `setup_fixtures()` creates a minimal synthetic `Bitumen Grade` DocType and the `Sales Order Item.custom_bitumen_grade` Link field only when absent, on this disposable test site. These test prerequisites are not installed by the app and must not be created on production:
 
 ```sh
 bench --site TEST_SITE run-tests --app pz_sales_contract

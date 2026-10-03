@@ -9,22 +9,64 @@ COMPANY = 'PZ Synthetic QA'
 def synthetic_bitumen_grade(grade_code='60/70'):
     if not frappe.db.exists('DocType', 'Bitumen Grade'):
         frappe.throw('The Bitumen Grade master must be installed for synthetic contract tests')
-    name = frappe.db.get_value('Bitumen Grade', {'grade_code': grade_code, 'disabled': 0}, 'name')
-    if name:
-        return name
     token = grade_code.replace('/', '-')
     synthetic_code = f'PZ-SYNTHETIC-{token}'
-    name = frappe.db.get_value('Bitumen Grade', {'grade_code': synthetic_code}, 'name')
-    if name:
+    meta = frappe.get_meta('Bitumen Grade')
+    code_field = 'grade_code' if meta.has_field('grade_code') else None
+    filters = {code_field: synthetic_code} if code_field else {'name': synthetic_code}
+    name = frappe.db.get_value('Bitumen Grade', filters, 'name')
+    if name and (not meta.has_field('disabled') or not frappe.db.get_value('Bitumen Grade', name, 'disabled')):
         return name
-    return frappe.get_doc(dict(doctype='Bitumen Grade', grade_code=synthetic_code,
-        grade_name=f'Synthetic {grade_code}', disabled=0, notes='Synthetic test data only')).insert().name
+
+    # Never reuse a real or disabled grade in synthetic tests. When the optional
+    # code field is absent, use a stable synthetic document name instead.
+    if name:
+        synthetic_code = f'{synthetic_code}-{frappe.generate_hash(length=6)}'
+    values = {'doctype': 'Bitumen Grade'}
+    if code_field:
+        values[code_field] = synthetic_code
+    else:
+        values['name'] = synthetic_code
+    if meta.has_field('grade_name'):
+        values['grade_name'] = f'Synthetic {grade_code}'
+    if meta.has_field('disabled'):
+        values['disabled'] = 0
+    if meta.has_field('notes'):
+        values['notes'] = 'Synthetic test data only'
+    return frappe.get_doc(values).insert().name
+
+
+def ensure_synthetic_grade_prerequisites():
+    """Install only missing external Grade prerequisites on disposable test sites."""
+    if not frappe.db.exists('DocType', 'Bitumen Grade'):
+        frappe.get_doc(dict(
+            doctype='DocType', name='Bitumen Grade', module='Sales Contracts',
+            custom=1, autoname='field:grade_code', title_field='grade_name',
+            fields=[
+                dict(fieldname='grade_code', label='Grade Code', fieldtype='Data', reqd=1, unique=1),
+                dict(fieldname='grade_name', label='Grade Name', fieldtype='Data', reqd=1),
+                dict(fieldname='disabled', label='Disabled', fieldtype='Check'),
+                dict(fieldname='notes', label='Notes', fieldtype='Small Text'),
+            ],
+        )).insert(ignore_permissions=True)
+
+    if not frappe.get_meta('Sales Order Item').has_field('custom_bitumen_grade'):
+        from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+
+        create_custom_fields({
+            'Sales Order Item': [dict(
+                fieldname='custom_bitumen_grade', label='Bitumen Grade',
+                fieldtype='Link', options='Bitumen Grade', insert_after='item_code',
+            )],
+        }, update=False)
+        frappe.clear_cache(doctype='Sales Order Item')
 
 
 def setup_fixtures():
     frappe.set_user('Administrator')
     # Fresh ERPNext sites have no setup-wizard tree roots yet. Create only the
     # synthetic-test prerequisites instead of relying on an existing pilot setup.
+    ensure_synthetic_grade_prerequisites()
     for doctype,key,name in [('Customer Group','customer_group_name','All Customer Groups'),
                              ('Territory','territory_name','All Territories'),
                              ('Item Group','item_group_name','All Item Groups')]:

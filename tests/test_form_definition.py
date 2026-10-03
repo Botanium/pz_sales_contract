@@ -84,7 +84,10 @@ class TestContractFormDefinition(unittest.TestCase):
         self.assertIn('required.push("grade_master")', self.javascript)
         self.assertIn('custom_bitumen_grade', self.controller)
         self.assertIn("return code or grade.name", self.controller)
+        self.assertIn("meta.has_field('grade_code')", self.controller)
         self.assertIn('gradeMaster, ["disabled"]', self.javascript)
+        synthetic_fixtures = (ROOT / "pz_sales_contract/testing.py").read_text()
+        self.assertIn("code_field = 'grade_code' if meta.has_field('grade_code') else None", synthetic_fixtures)
 
         specification_schema = json.loads((ROOT / "pz_sales_contract/sales_contracts/doctype/pz_contract_specification/pz_contract_specification.json").read_text())
         specification_required_fields = {
@@ -112,7 +115,12 @@ class TestContractFormDefinition(unittest.TestCase):
             hashlib.sha256(canonical_v1.encode("utf-8")).hexdigest(),
             python_constant(CONTRACT_TERMS_PY, "LEGACY_TERMS_V1_SHA256"),
         )
-        self.assertIn("_legacy_terms_snapshot()", CONTRACT_TERMS_PY.read_text())
+        active_terms = json.loads(TERMS_JSON.read_text())
+        self.assertTrue(active_terms and all(isinstance(clause, str) for clause in active_terms))
+        terms_source = CONTRACT_TERMS_PY.read_text()
+        self.assertIn("_legacy_terms_snapshot()", terms_source)
+        new_contract_path = terms_source.split("def clauses_for_contract", 1)[0]
+        self.assertIn("return _validated_snapshot((_app_path() / 'terms.json').read_text(encoding='utf-8'))", new_contract_path)
         self.assertIn("clauses_for_contract(doc)", (ROOT / "pz_sales_contract/printing.py").read_text())
         review_copy = (ROOT / "docs/contract-print-copy-review.md").read_text()
         self.assertIn("not active as a replacement print layout", review_copy)
