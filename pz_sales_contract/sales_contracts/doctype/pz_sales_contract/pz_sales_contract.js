@@ -128,9 +128,9 @@ async function setCurrentDocumentValues(frm, values, isCurrent, didSet = () => {
 
 const requiredChecklistGroups = [
   {
-    label: "Customer and dates",
+    label: "Customer and contract date",
     firstField: "customer",
-    fields: ["customer", "company", "transaction_date", "delivery_date"],
+    fields: ["customer", "company", "transaction_date"],
   },
   {
     label: "Products and price",

@@ -84,7 +84,9 @@
     "sales_order",
     "first_family",
     "amended_from",
-    "terms_snapshot"
+    "terms_snapshot",
+    "contract_scope_version",
+    "cancelled_sales_order_reference"
   ],
   "fields": [
     {
@@ -122,9 +124,10 @@
     },
     {
       "fieldname": "delivery_date",
-      "label": "Planned delivery date",
+      "label": "Historical planned delivery date",
       "fieldtype": "Date",
-      "reqd": 1
+      "hidden": 1,
+      "description": "Retained for existing contracts; enter delivery date on the linked Sales Order for new contracts."
     },
     {
       "fieldname": "customer_details",
@@ -248,9 +251,11 @@
     },
     {
       "fieldname": "taxes",
-      "label": "Taxes / charges",
+      "label": "Historical taxes / charges",
       "fieldtype": "Table",
-      "options": "Sales Taxes and Charges"
+      "options": "Sales Taxes and Charges",
+      "hidden": 1,
+      "description": "Retained for existing contracts; enter applicable taxes and charges on the linked Sales Order for new contracts."
     },
     {
       "fieldname": "subtotal",
@@ -264,7 +269,8 @@
       "label": "Taxes / charges total",
       "fieldtype": "Currency",
       "options": "currency",
-      "read_only": 1
+      "read_only": 1,
+      "hidden": 1
     },
     {
       "fieldname": "grand_total",
@@ -579,7 +585,8 @@
       "fieldtype": "Link",
       "options": "Sales Order",
       "read_only": 1,
-      "no_copy": 1
+      "no_copy": 1,
+      "description": "New-scope contracts create this order as Draft. Enter the delivery date and applicable taxes/charges on the Sales Order, then submit it manually."
     },
     {
       "fieldname": "first_family",
@@ -595,6 +602,22 @@
       "fieldtype": "Link",
       "options": "PZ Sales Contract",
       "read_only": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "contract_scope_version",
+      "label": "Contract scope version (internal)",
+      "fieldtype": "Data",
+      "read_only": 1,
+      "hidden": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "cancelled_sales_order_reference",
+      "label": "Removed draft Sales Order reference",
+      "fieldtype": "Data",
+      "read_only": 1,
+      "hidden": 1,
       "no_copy": 1
     },
     {

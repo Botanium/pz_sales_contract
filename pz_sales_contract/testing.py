@@ -108,14 +108,14 @@ def new_customer():
     return customer,address,contact
 
 
-def contract(customer=None, submit=False, insert=True, **values):
+def contract(customer=None, submit=False, insert=True, submit_sales_order=True, **values):
     if not customer:
         customer,address,contact=new_customer()
     else:
         address=frappe.get_doc('Address',frappe.db.get_value('Dynamic Link',dict(parenttype='Address',link_doctype='Customer',link_name=customer),'parent'))
         contact=frappe.get_doc('Contact',frappe.db.get_value('Dynamic Link',dict(parenttype='Contact',link_doctype='Customer',link_name=customer),'parent'))
     d=dict(doctype='PZ Sales Contract',customer=customer,company=COMPANY,
-        transaction_date=today(),delivery_date=add_days(today(),10),currency='USD',conversion_rate=1,
+        transaction_date=today(),currency='USD',conversion_rate=1,
         selling_price_list='PZ Synthetic USD',customer_address=address.name,contact_person=contact.name,
         seller_address='PZ Synthetic Seller-Billing',seller_signatory='Synthetic Seller',seller_position='Test manager',buyer_position='Test buyer',
         items=[dict(item_code='PZ Synthetic Bitumen',qty=10,uom='Nos',rate=100,
@@ -138,6 +138,15 @@ def contract(customer=None, submit=False, insert=True, **values):
         doc.insert()
     if submit:
         doc.submit()
+        if submit_sales_order and doc.sales_order:
+            order=frappe.get_doc('Sales Order',doc.sales_order)
+            if order.docstatus == 0:
+                # Simulate the user's separate Sales Order completion step in
+                # tests that exercise submitted-order receipt integrations.
+                order.delivery_date=add_days(today(),10)
+                for row in order.items:
+                    row.delivery_date=order.delivery_date
+                order.save().submit()
     return doc
 
 

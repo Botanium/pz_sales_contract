@@ -116,17 +116,37 @@ class TestContractFormDefinition(unittest.TestCase):
         self.assertIn("clauses_for_contract(doc)", (ROOT / "pz_sales_contract/printing.py").read_text())
         review_copy = (ROOT / "docs/contract-print-copy-review.md").read_text()
         self.assertIn("This copy is not active in the print template", review_copy)
-        self.assertIn("Policy-dependent lines — leave unresolved", review_copy)
+        self.assertIn("Confirmed workflow lines — legal review remains open", review_copy)
 
     def test_primary_fields_stay_discoverable_and_advanced_sections_collapse(self):
         field_order = self.contract["field_order"]
-        for fieldname in ("customer", "company", "transaction_date", "delivery_date", "items", "incoterm", "named_place"):
+        for fieldname in ("customer", "company", "transaction_date", "items", "incoterm", "named_place"):
             self.assertLess(field_order.index(fieldname), field_order.index("customer_details"))
         fields = {field["fieldname"]: field for field in self.contract["fields"]}
+        for fieldname in ("delivery_date", "taxes", "tax_total"):
+            self.assertEqual(fields[fieldname].get("hidden"), 1)
+            self.assertFalse(fields[fieldname].get("reqd"))
+        self.assertIn("enter delivery date on the linked Sales Order", fields["delivery_date"].get("description", ""))
+        self.assertIn("enter applicable taxes and charges on the linked Sales Order", fields["taxes"].get("description", ""))
         for fieldname in ("payment", "records", "internal"):
             self.assertEqual(fields[fieldname].get("collapsible"), 1)
         for fieldname in ("parties", "commercial", "delivery", "specs"):
             self.assertFalse(fields[fieldname].get("collapsible"))
+
+    def test_new_scope_policy_keeps_historical_contract_values_and_protects_sales_order(self):
+        fields = {field["fieldname"]: field for field in self.contract["fields"]}
+        for fieldname in ("contract_scope_version", "cancelled_sales_order_reference"):
+            self.assertEqual(fields[fieldname].get("hidden"), 1)
+            self.assertTrue(fields[fieldname].get("read_only"))
+        self.assertIn("ITEM_ONLY_DRAFT_SO_SCOPE", self.controller)
+        self.assertIn("validate_item_only_sales_order_before_submit", (ROOT / "pz_sales_contract/hooks.py").read_text())
+        self.assertIn("order.skip_delivery_note = 1", self.controller)
+        self.assertIn("order.db_set('skip_delivery_note', 0", self.controller)
+        self.assertIn("if order.docstatus == 0", self.controller)
+        template = (ROOT / "pz_sales_contract/templates/contract.html").read_text()
+        self.assertIn("if not is_item_only_draft", template)
+        self.assertIn("not included in this contract total", template)
+        self.assertIn("LINKED SALES ORDER DRAFT", template)
 
     def test_company_defaults_are_one_per_company_and_admin_managed(self):
         permissions = self.defaults["permissions"]

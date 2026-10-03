@@ -12,6 +12,8 @@ from pz_sales_contract.sales_contracts.doctype.pz_contract_defaults.pz_contract_
     get_allowed_contract_incoterms,
 )
 
+ITEM_ONLY_DRAFT_SO_SCOPE = 'item-only-draft-so-v1'
+
 CURRENCY_DEPENDENT_DEFAULT_FIELDS = frozenset({
     'conversion_rate',
     'selling_price_list',
@@ -89,9 +91,17 @@ class PZSalesContract(Document):
             if original.docstatus != 2 or original.customer != self.customer or original.company != self.company:
                 frappe.throw('Amendments require a cancelled contract with the same customer and company')
             self.first_family = original.first_family
+            # Amendments retain the source contract's delivery/tax lifecycle.
+            self.contract_scope_version = original.get('contract_scope_version')
         else:
             original = None
             self.first_family = frappe.generate_hash(length=20)
+            self.contract_scope_version = ITEM_ONLY_DRAFT_SO_SCOPE
+            # New contracts never accept hidden legacy schedule data through
+            # Desk defaults, imports, or REST payloads.
+            self.delivery_date = None
+            self.set('taxes', [])
+            self.tax_total = 0
         # Pin the exact clauses used by this contract. Amendments retain the
         # source contract's clause version; historical records without a saved
         # snapshot use the immutable first-version copy when printed.
@@ -219,7 +229,7 @@ class PZSalesContract(Document):
     def validate(self):
         old = self.get_doc_before_save()
         if old:
-            for key in ['customer', 'company', 'first_family', 'sales_order', 'amended_from']:
+            for key in ['customer', 'company', 'first_family', 'sales_order', 'amended_from', 'contract_scope_version']:
                 if self.get(key) != old.get(key):
                     frappe.throw(f'{key} cannot be changed after creation')
             if self.terms_snapshot != old.terms_snapshot:
@@ -227,6 +237,14 @@ class PZSalesContract(Document):
         elif self.is_new():
             # Reject forged readonly internal values from REST/import as well as Desk.
             self.sales_order = None
+        if self.uses_item_only_draft_order():
+            # A new-scope contract ignores forged values for hidden legacy
+            # fields. Taxes and delivery date are completed on its linked SO.
+            self.delivery_date = None
+            self.set('taxes', [])
+            self.tax_total = 0
+        elif not self.delivery_date:
+            frappe.throw('Legacy contracts require their saved planned delivery date')
         self.validate_links_and_snapshots(old)
         self.validate_schedule()
         self.validate_incoterm(old)
@@ -415,8 +433,11 @@ class PZSalesContract(Document):
 
     def build_order(self):
         order = frappe.new_doc('Sales Order')
-        for key in ['customer','company','transaction_date','delivery_date','currency','conversion_rate',
-                    'selling_price_list','customer_address','contact_person','incoterm']:
+        fields = ['customer','company','transaction_date','currency','conversion_rate',
+                  'selling_price_list','customer_address','contact_person','incoterm']
+        if not self.uses_item_only_draft_order():
+            fields.insert(3, 'delivery_date')
+        for key in fields:
             order.set(key, self.get(key))
         order.order_type = 'Sales'
         order.named_place = self.named_place
@@ -427,22 +448,40 @@ class PZSalesContract(Document):
         for row in self.items:
             item = dict(item_code=row.item_code, item_name=row.item_name,
                 description=row.description, qty=row.qty, uom=row.uom, conversion_factor=row.conversion_factor,
-                rate=row.rate, delivery_date=self.delivery_date)
+                rate=row.rate)
+            if not self.uses_item_only_draft_order():
+                item['delivery_date'] = self.delivery_date
             if row.grade_master:
                 item['custom_bitumen_grade'] = row.grade_master
             order.append('items', item)
-        for tax in self.taxes:
-            order.append('taxes', {key:tax.get(key) for key in ['charge_type','account_head','description','rate','tax_amount','cost_center']})
+        if not self.uses_item_only_draft_order():
+            for tax in self.taxes:
+                order.append('taxes', {key:tax.get(key) for key in ['charge_type','account_head','description','rate','tax_amount','cost_center']})
         return order
+
+    def uses_item_only_draft_order(self):
+        return self.get('contract_scope_version') == ITEM_ONLY_DRAFT_SO_SCOPE
 
     def on_submit(self):
         # Native permission checks remain in force. A Sales User cannot mint submitted
         # contracts/Sales Orders, even by calling REST directly.
         self.validate_grade_masters(self.get_doc_before_save(), require_active=True)
         order = self.build_order()
+        if self.uses_item_only_draft_order():
+            # ERPNext requires Delivery Date to insert a Sales Order, even
+            # though the user is meant to provide that value after this step.
+            # Bypass that one insert-time check, then immediately turn the
+            # native bypass back off. The order remains Draft and a later save
+            # or submit still requires a real user-entered delivery date.
+            order.skip_delivery_note = 1
         order.insert()
-        order.submit()
-        if abs(order.grand_total-self.grand_total) > 0.000001:
+        if self.uses_item_only_draft_order():
+            order.db_set('skip_delivery_note', 0, update_modified=False)
+            order.skip_delivery_note = 0
+        else:
+            order.submit()
+        total_to_compare = order.net_total if self.uses_item_only_draft_order() else order.grand_total
+        if abs(total_to_compare-self.grand_total) > 0.000001:
             frappe.throw('Native Sales Order total changed; review contract arithmetic')
         self.db_set('sales_order', order.name)
 
@@ -456,6 +495,15 @@ class PZSalesContract(Document):
                 # Native permission/link checks block cancellation with active downstream
                 # receipts, invoices or deliveries. Everything rolls back together.
                 order.cancel()
+            elif order.docstatus == 0:
+                # A cancelled contract must not leave a manually submittable
+                # linked draft Sales Order behind. Use native delete permission;
+                # failure rolls the contract cancellation back as one transaction.
+                order.check_permission('delete')
+                reference = order.name
+                frappe.delete_doc('Sales Order', reference)
+                self.db_set('cancelled_sales_order_reference', reference)
+                self.db_set('sales_order', None)
 
     def before_update_after_submit(self):
         self.validate_schedule()
@@ -463,3 +511,48 @@ class PZSalesContract(Document):
     def before_print(self, settings=None):
         if self.is_new() or not frappe.db.exists(self.doctype, self.name):
             frappe.throw('Save the contract before printing')
+
+
+def validate_item_only_sales_order_before_submit(doc, method=None):
+    """Keep manually completed new-scope Sales Orders within their contract."""
+    contract_name = frappe.db.get_value('PZ Sales Contract', {'sales_order': doc.name}, 'name')
+    if not contract_name:
+        return
+    contract = frappe.get_doc('PZ Sales Contract', contract_name)
+    if contract.get('contract_scope_version') != ITEM_ONLY_DRAFT_SO_SCOPE:
+        return
+    contract.check_permission('read')
+    if contract.docstatus != 1 or contract.sales_order != doc.name:
+        frappe.throw('The linked contract must be submitted before this Sales Order')
+    if doc.get('skip_delivery_note') or not doc.get('delivery_date'):
+        frappe.throw('Enter the delivery date on the Sales Order before submitting it')
+
+    immutable_fields = (
+        'customer', 'company', 'transaction_date', 'currency', 'conversion_rate',
+        'selling_price_list', 'customer_address', 'contact_person', 'incoterm', 'named_place',
+    )
+    for fieldname in immutable_fields:
+        if doc.get(fieldname) != contract.get(fieldname):
+            frappe.throw(f'Sales Order {fieldname} must match the linked contract')
+    if doc.order_type != 'Sales' or doc.apply_discount_on != 'Net Total':
+        frappe.throw('Sales Order type and discount basis must match the linked contract')
+    if Decimal(str(doc.discount_amount or 0)) != Decimal(str(contract.discount_amount or 0)):
+        frappe.throw('Sales Order discount must match the linked contract')
+
+    if len(doc.items) != len(contract.items):
+        frappe.throw('Sales Order product lines must match the linked contract')
+    for sales_item, contract_item in zip(doc.items, contract.items, strict=True):
+        values = (
+            sales_item.item_code == contract_item.item_code,
+            Decimal(str(sales_item.qty or 0)) == Decimal(str(contract_item.qty or 0)),
+            sales_item.uom == contract_item.uom,
+            Decimal(str(sales_item.conversion_factor or 0)) == Decimal(str(contract_item.conversion_factor or 0)),
+            Decimal(str(sales_item.rate or 0)) == Decimal(str(contract_item.rate or 0)),
+            sales_item.get('custom_bitumen_grade') == contract_item.get('grade_master'),
+        )
+        if not all(values):
+            frappe.throw('Sales Order product, Grade, quantity, UOM, and rate must match the linked contract')
+
+    doc.calculate_taxes_and_totals()
+    if abs(Decimal(str(doc.net_total or 0)) - Decimal(str(contract.grand_total or 0))) > Decimal('0.000001'):
+        frappe.throw('Sales Order discounted item total must match the linked contract; review item discounts')

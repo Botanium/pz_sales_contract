@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
-from frappe.utils import get_timedelta, today
+from frappe.utils import add_days, get_timedelta, today
 
 from pz_sales_contract.payments import payment_status, get_status
 from pz_sales_contract.contract_terms import clauses_for_contract, snapshot_for_new_contract
@@ -99,11 +99,22 @@ class TestPZSalesContract(IntegrationTestCase):
 
     def test_native_arithmetic_and_master_links(self):
         tax_account=frappe.db.get_value('Account',dict(company=COMPANY,is_group=0,root_type='Income'),'name')
-        d=contract(discount_amount=100,taxes=[dict(charge_type='On Net Total',account_head=tax_account,description='Synthetic 10%',rate=10)])
-        self.assertEqual((d.subtotal,d.tax_total,d.grand_total,d.advance_required),(1000,90,990,297))
-        self.assertEqual(d.taxes[0].tax_amount_after_discount_amount,90)
+        d=contract(discount_amount=100)
+        self.assertEqual((d.subtotal,d.tax_total,d.grand_total,d.advance_required,d.balance_required),(1000,0,900,270,630))
+        self.assertFalse(d.taxes)
         d.submit()
-        self.assertEqual(frappe.db.get_value('Sales Order',d.sales_order,'grand_total'),990)
+        order=frappe.get_doc('Sales Order',d.sales_order)
+        self.assertEqual(order.docstatus,0)
+        self.assertFalse(order.delivery_date)
+        self.assertFalse(order.taxes)
+        order.delivery_date=add_days(today(),10)
+        for item in order.items:
+            item.delivery_date=order.delivery_date
+        order.append('taxes',dict(charge_type='On Net Total',account_head=tax_account,
+            description='Synthetic 10%',rate=10))
+        order.save().submit()
+        self.assertEqual((order.net_total,order.grand_total),(900,990))
+        self.assertEqual(frappe.db.get_value('PZ Sales Contract',d.name,'grand_total'),900)
         self.assertEqual(frappe.db.get_value('Sales Order',d.sales_order,'named_place'),d.named_place)
         self.assertEqual(d.items[0].item_name,'Synthetic Bitumen')
         self.assertIn('Nine Hundred And Ninety',d.in_words)
@@ -988,15 +999,65 @@ class TestPZSalesContract(IntegrationTestCase):
             pf.db_set('pdf_generator',old_generator)
             frappe.local.form_dict=old_values
 
-    def test_tax_zero_after_full_net_discount_and_actual_charge(self):
+    def test_sales_order_taxes_do_not_change_new_contract_payment_basis(self):
         account=frappe.db.get_value('Account',dict(company=COMPANY,is_group=0,root_type='Income'),'name')
-        d=contract(discount_amount=1000,taxes=[
-            dict(charge_type='On Net Total',account_head=account,description='Synthetic 10% discounted to zero',rate=10),
-            dict(charge_type='Actual',account_head=account,description='Synthetic actual handling',tax_amount=10)])
-        self.assertEqual(d.grand_total,10)
-        self.assertEqual(d.taxes[0].tax_amount_after_discount_amount,0)
+        d=contract(discount_amount=100,submit=True,submit_sales_order=False)
+        self.assertEqual((d.grand_total,d.advance_required,d.balance_required),(900,270,630))
+        order=frappe.get_doc('Sales Order',d.sales_order)
+        order.delivery_date=add_days(today(),10)
+        for item in order.items:
+            item.delivery_date=order.delivery_date
+        order.append('taxes',dict(charge_type='On Net Total',account_head=account,
+            description='Synthetic 10%',rate=10))
+        order.append('taxes',dict(charge_type='Actual',account_head=account,
+            description='Synthetic actual handling',tax_amount=10))
+        order.save().submit()
+        self.assertEqual(order.net_total,900)
+        self.assertEqual(order.grand_total,1000)
+        self.assertEqual(frappe.db.get_value('PZ Sales Contract',d.name,'tax_total'),0)
         html=frappe.get_print('PZ Sales Contract',d.name)
-        self.assertIn('10.0% / 0.00',html)
+        self.assertIn('not included in this contract total',html)
+        self.assertNotIn('Identified taxes and charges',html)
+
+    def test_new_contract_keeps_sales_order_draft_until_user_supplies_delivery_date(self):
+        d=contract(discount_amount=100,submit=True,submit_sales_order=False)
+        order=frappe.get_doc('Sales Order',d.sales_order)
+        self.assertEqual(order.docstatus,0)
+        self.assertFalse(order.delivery_date)
+        self.assertFalse(order.skip_delivery_note)
+        self.assertEqual((d.grand_total,d.tax_total,d.advance_required,d.balance_required),(900,0,270,630))
+        status=payment_status(d)
+        self.assertEqual(status.confirmed,0)
+        self.assertTrue(status.payment_draft)
+        with self.assertRaises(frappe.ValidationError):
+            order.submit()
+
+        order=frappe.get_doc('Sales Order',d.sales_order)
+        order.delivery_date=add_days(today(),10)
+        for item in order.items:
+            item.delivery_date=order.delivery_date
+        order.save().submit()
+        self.assertEqual(order.docstatus,1)
+        self.assertEqual(order.net_total,d.grand_total)
+
+    def test_modified_contract_lines_cannot_be_manually_submitted_on_sales_order(self):
+        d=contract(submit=True,submit_sales_order=False)
+        order=frappe.get_doc('Sales Order',d.sales_order)
+        order.delivery_date=add_days(today(),10)
+        for item in order.items:
+            item.delivery_date=order.delivery_date
+        order.items[0].rate += 1
+        order.save()
+        with self.assertRaises(frappe.ValidationError):
+            order.submit()
+
+    def test_cancelling_contract_removes_its_linked_draft_sales_order(self):
+        d=contract(submit=True,submit_sales_order=False)
+        order_name=d.sales_order
+        d.cancel()
+        self.assertFalse(frappe.db.exists('Sales Order',order_name))
+        self.assertEqual(frappe.db.get_value('PZ Sales Contract',d.name,'sales_order'),None)
+        self.assertEqual(frappe.db.get_value('PZ Sales Contract',d.name,'cancelled_sales_order_reference'),order_name)
 
     def test_nominated_accounts_and_unagreed_cash(self):
         d=contract(submit=True,cash_receiving_account=None)

@@ -1,6 +1,6 @@
 # Contract print copy — review draft
 
-**Status: draft for user and legal review. This copy is not active in the print template.** The current clause text in `pz_sales_contract/terms.json` remains unchanged while delivery and tax policy choices are pending.
+**Status: draft for legal and print review. The user's delivery-date and tax choices are recorded below; this copy is not active as a replacement print layout.** New contracts now snapshot the active terms in `pz_sales_contract/terms.json`; existing snapshots and the frozen v1 fallback remain unchanged.
 
 ## Proposed print structure
 
@@ -18,20 +18,18 @@ Do not activate that structure until the Contract Terms have been reconciled wit
 
 > Each signatory confirms that they are authorised to sign for the party named below and that the party accepts this document, including its completed commercial details and the Contract Terms reproduced here.
 
-These paragraphs are candidates only. They do not settle the delivery-date or tax questions below and do not replace review of the full clauses or applicable law.
+These paragraphs are candidates only. They do not replace review of the full clauses or applicable law.
 
-## Policy-dependent lines — leave unresolved
+## Confirmed workflow lines — legal review remains open
 
-- **Delivery-date option under review:** If the user confirms a Draft Sales Order workflow, candidate line: “The delivery date is entered on the linked Sales Order before that order is submitted.” Do not print an empty delivery date or imply that one has been agreed in the contract.
-- **Tax option under review:** If the user confirms item-amount-only 30% / 70% calculations with tax later on the Sales Order or invoice, candidate line: “The contract payment percentages are calculated on the discounted goods amount. Applicable taxes and charges are calculated and shown on the linked Sales Order or invoice.” Do not activate until the user confirms the basis and which charges, if any, are included.
+- **Delivery date:** Omit it from new contract entry and print. The linked Sales Order remains Draft until a user enters the delivery date and manually submits it.
+- **Tax basis:** New contract total and 30% / 70% amounts use discounted goods only. Applicable taxes and charges are entered on the linked Sales Order or invoice and are not included in the contract amount.
+- The active print still contains the Commercial Schedule, fixed 24-business-hour banner, Approval / Collection Record and associated signature assertions. Their legal treatment is unresolved; this WIP keeps them visible and blocks release pending copy/legal review.
 
 ## Historical clause handling
 
 New contracts store the exact `terms.json` clause list in the hidden `terms_snapshot` field at creation. Amendments inherit the source contract’s snapshot. Contracts created before snapshots existed use the immutable `terms_versions/v1.json` copy when printed. A canonical SHA-256 check guards v1 at runtime and in the static test suite. That v1 copy freezes the clause list present at this change; it cannot prove which text an older contract rendered before this snapshot mechanism existed. Future approved copy changes should update the active `terms.json`; already-created contracts will continue to print their saved snapshot.
 
-## Pending confirmations
+## Remaining release review
 
-1. Should the contract create a **Draft Sales Order**, with the delivery date entered or confirmed on that order before Sales Order submission?
-2. Should the contract total and 30% / 70% amounts use **discounted item amounts only**, with taxes and charges calculated later on the Sales Order or invoice?
-
-Until both answers and the copy review are recorded, this draft does not replace the current print template or active clauses.
+The user has selected the Draft Sales Order flow and item-only contract amount. The changed active clauses state that basis for new contracts. This draft still does not replace the existing print layout; legal review and a consistent treatment of the schedule and approval assertions remain release gates.
