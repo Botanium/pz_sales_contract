@@ -142,12 +142,12 @@ class TestEntryPolicy(unittest.TestCase):
         copied = Doc(name='new-row', idx=1, item_code='Bitumen - Bulk',
             grade_master='Grade 60/70', grade='60/70', qty=10, uom='Nos',
             rate=100, specification_reference='Legacy reference', packaging=None)
-        self.assertIsNone(self.policy.previous_item_packaging(copied, [old]))
-        self.assertIs(self.policy.previous_item_packaging(copied, [old], allow_copy_match=True), old)
+        self.assertIsNone(self.policy.find_previous_item_row(copied, [old]))
+        self.assertIs(self.policy.find_previous_item_row(copied, [old], allow_copy_match=True), old)
 
         replacement = Doc(copied)
         replacement.qty = 20
-        self.assertIsNone(self.policy.previous_item_packaging(
+        self.assertIsNone(self.policy.find_previous_item_row(
             replacement, [old], allow_copy_match=True))
         self.policy.apply_item_packaging(replacement)
         self.assertEqual(replacement.packaging, 'Bulk')

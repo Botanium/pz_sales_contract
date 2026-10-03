@@ -35,7 +35,7 @@ def uses_entry_policy(doc):
     return doc.get('entry_policy_version') == ENTRY_POLICY_VERSION
 
 
-def previous_item_packaging(item, saved_items, allow_copy_match=False):
+def find_previous_item_row(item, saved_items, allow_copy_match=False):
     name = item.get('name')
     if name:
         previous = next((row for row in saved_items if row.get('name') == name), None)

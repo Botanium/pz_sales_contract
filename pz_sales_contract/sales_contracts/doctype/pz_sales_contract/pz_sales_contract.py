@@ -9,7 +9,7 @@ from pz_sales_contract.calendar import add_open_hours, schedule
 from pz_sales_contract.contract_terms import CURRENT_TERMS_VERSION, snapshot_for_new_contract
 from pz_sales_contract.entry_policy import (
     ENTRY_POLICY_VERSION, apply_item_packaging, apply_usd_policy,
-    previous_item_packaging, uses_entry_policy, validate_location,
+    find_previous_item_row, uses_entry_policy, validate_location,
 )
 from pz_sales_contract.sales_contracts.doctype.pz_contract_defaults.pz_contract_defaults import (
     COMPANY_DEFAULT_FIELDS,
@@ -382,7 +382,7 @@ class PZSalesContract(Document):
             # Frappe amendments copy child rows with new names. In that copy
             # flow, positional matching also requires the source line content
             # to match; a replacement row must derive a fresh value.
-            previous = previous_item_packaging(item, saved_items,
+            previous = find_previous_item_row(item, saved_items,
                 allow_copy_match=bool(self.is_new() and self.amended_from))
             apply_item_packaging(item, previous)
             factor = 1 if item.uom == master.stock_uom else next((r.conversion_factor for r in master.uoms if r.uom == item.uom), None)
