@@ -179,6 +179,8 @@ class TestContractFormDefinition(unittest.TestCase):
         self.assertEqual(packaging.get("read_only"), 1)
         self.assertFalse(packaging.get("reqd"))
         self.assertFalse(packaging.get("in_list_view"))
+        legacy_required = python_constant(CONTRACT_PY, "LEGACY_REQUIRED_ITEM_FIELDS")
+        self.assertNotIn("packaging", legacy_required)
 
         template = (ROOT / "pz_sales_contract/templates/contract.html").read_text()
         self.assertEqual(template.count("{% if row.packaging %} · {{ row.packaging|e }}{% endif %}"), 2)

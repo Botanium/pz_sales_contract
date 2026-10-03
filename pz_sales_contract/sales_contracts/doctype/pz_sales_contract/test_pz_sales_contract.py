@@ -208,9 +208,9 @@ class TestPZSalesContract(IntegrationTestCase):
 
         legacy = contract(insert=False, terms_version=None, delivery_date=today(),
             items=[
-                dict(item_code='PZ Synthetic Bitumen', grade='60/70', packaging='Synthetic drums',
+                dict(item_code='PZ Synthetic Bitumen', grade='60/70', packaging=None,
                     qty=10, uom='Nos', rate=100, specification_reference='Synthetic reference A'),
-                dict(item_code='PZ Synthetic Binder', grade='80/100', packaging='Synthetic drums',
+                dict(item_code='PZ Synthetic Binder', grade='80/100', packaging=None,
                     qty=5, uom='Nos', rate=100, specification_reference='Synthetic reference B'),
             ], specifications=[specification])
         with self.assertRaises(frappe.ValidationError):
@@ -223,6 +223,74 @@ class TestPZSalesContract(IntegrationTestCase):
         simplified.append('specifications', specification)
         with self.assertRaises(frappe.ValidationError):
             simplified.validate_specifications()
+
+    def test_legacy_packaging_is_derived_on_item_change_and_saved_for_print(self):
+        for item_code in ('Bitumen - Bulk', 'Bitumen - Drum'):
+            if not frappe.db.exists('Item', item_code):
+                item = frappe.copy_doc(frappe.get_doc('Item', 'PZ Synthetic Bitumen'))
+                item.item_code = item_code
+                item.item_name = item_code
+                item.insert()
+
+        doc = contract(insert=False, items=[dict(item_code='Bitumen - Bulk',
+            qty=10, uom='Nos', rate=100, grade_master=synthetic_bitumen_grade(),
+            grade='PZ-SYNTHETIC-60-70', packaging='Untrusted input',
+            specification_reference='Synthetic reference')])
+        doc.insert()
+        self.assertEqual(doc.items[0].packaging, 'Bulk')
+
+        # Treat the saved document as a pre-policy record with the full legacy
+        # schedule and specification data expected by the historical workflow.
+        frappe.db.set_value(doc.doctype, doc.name, {
+            'entry_policy_version': None,
+            'terms_version': None,
+            'terms_snapshot': None,
+            'contract_scope_version': None,
+        })
+        doc.reload()
+        self.complete_legacy_schedule(doc)
+        doc.set('specifications', [])
+        doc.append('specifications', dict(item_code='Bitumen - Bulk',
+            property='Penetration', unit='dmm', test_method='Synthetic method',
+            requirement='60-70 (demo only)'))
+        doc.save()
+
+        doc.items[0].item_code = 'Bitumen - Drum'
+        doc.items[0].packaging = 'Bulk'
+        doc.specifications[0].item_code = 'Bitumen - Drum'
+        doc.save()
+        doc.reload()
+        self.assertEqual(doc.items[0].packaging, 'Drum')
+
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(frappe.get_print(doc.doctype, doc.name,
+            print_format='Standard'), 'html.parser')
+        product_cell = soup.select('.contract section')[0].select('table')[1].select(
+            'tbody tr')[0].select('td')[1]
+        self.assertIn('· Drum', product_cell.get_text(' ', strip=True))
+
+        # An unchanged legacy line keeps its persisted package snapshot.
+        frappe.db.set_value('PZ Contract Item', doc.items[0].name,
+            'packaging', 'Historical legacy snapshot')
+        doc.reload()
+        doc.save()
+        self.assertEqual(doc.items[0].packaging, 'Historical legacy snapshot')
+
+        doc.items[0].item_code = 'PZ Synthetic Bitumen'
+        doc.items[0].packaging = 'Drum'
+        doc.specifications[0].item_code = 'PZ Synthetic Bitumen'
+        doc.save()
+        doc.reload()
+        self.assertIsNone(doc.items[0].packaging)
+
+        soup = BeautifulSoup(frappe.get_print(doc.doctype, doc.name,
+            print_format='Standard'), 'html.parser')
+        product_cell = soup.select('.contract section')[0].select('table')[1].select(
+            'tbody tr')[0].select('td')[1]
+        product_text = product_cell.get_text(' ', strip=True)
+        self.assertIn('PZ Synthetic Bitumen', product_text)
+        self.assertNotIn('·', product_text)
+        self.assertNotIn('None', product_text)
 
     def test_legacy_schedule_cannot_bypass_missing_inputs_but_v2_has_no_schedule(self):
         legacy = contract(insert=False, terms_version=None, contract_scope_version=None,

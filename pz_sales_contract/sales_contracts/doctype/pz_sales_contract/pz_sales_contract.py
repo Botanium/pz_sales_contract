@@ -57,7 +57,7 @@ LEGACY_REQUIRED_CONTRACT_FIELDS = (
     'account_iban', 'swift_reference',
 )
 LEGACY_REQUIRED_ITEM_FIELDS = (
-    'item_code', 'grade', 'packaging', 'qty', 'uom', 'rate', 'specification_reference',
+    'item_code', 'grade', 'qty', 'uom', 'rate', 'specification_reference',
 )
 LEGACY_REQUIRED_SPECIFICATION_FIELDS = ('item_code', 'property', 'test_method', 'requirement')
 
@@ -304,7 +304,7 @@ class PZSalesContract(Document):
         apply_usd_policy(self, entry_source)
         validate_location(self, entry_source)
         self.validate_specifications()
-        self.validate_links_and_snapshots(old)
+        self.validate_links_and_snapshots(old, entry_source)
         self.validate_schedule()
         self.validate_incoterm(old)
         order = self.build_order()
@@ -336,7 +336,7 @@ class PZSalesContract(Document):
                         'base_tax_amount_after_discount_amount','total','base_total']:
                 row.set(key, calculated.get(key))
 
-    def validate_links_and_snapshots(self, old=None):
+    def validate_links_and_snapshots(self, old=None, packaging_source=None):
         customer = frappe.get_doc('Customer', self.customer)
         customer.check_permission('read')
         if customer.disabled:
@@ -372,14 +372,17 @@ class PZSalesContract(Document):
                 if (account.account_currency or currency) != self.currency:
                     frappe.throw('Nominated receiving accounts must use the contract currency')
         self.validate_grade_masters(old)
+        saved_items = packaging_source.items if packaging_source else []
         for item in self.items:
             master = frappe.get_doc('Item', item.item_code)
             master.check_permission('read')
             if master.disabled or not master.is_sales_item or item.qty <= 0 or item.rate <= 0:
                 frappe.throw('Choose an enabled sales Item and positive quantity/rate')
-            if uses_entry_policy(self):
-                previous = next((r for r in (old.items if old else []) if r.name == item.name), None)
-                apply_item_packaging(item, previous)
+            previous = next((r for r in saved_items if r.name == item.name), None)
+            if previous is None:
+                previous = next((r for r in saved_items
+                    if r.idx == item.idx and r.item_code == item.item_code), None)
+            apply_item_packaging(item, previous)
             factor = 1 if item.uom == master.stock_uom else next((r.conversion_factor for r in master.uoms if r.uom == item.uom), None)
             if not factor or factor <= 0:
                 frappe.throw(f'No ERP UOM conversion exists for {item.item_code}: {item.uom}')
