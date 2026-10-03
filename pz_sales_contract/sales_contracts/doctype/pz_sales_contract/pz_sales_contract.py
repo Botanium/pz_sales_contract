@@ -79,6 +79,11 @@ class PZSalesContract(Document):
                 self.set(fieldname, value)
         for fieldname in initially_blank_historical:
             self.set(fieldname, None)
+        if not self.amended_from and (
+            self.is_new() or self.get('terms_version') == CURRENT_TERMS_VERSION
+        ):
+            # Clear before Frappe validates Link fields such as holiday_list.
+            self._clear_historical_contract_fields()
 
     def before_insert(self):
         self._apply_company_defaults()

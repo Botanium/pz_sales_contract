@@ -298,7 +298,7 @@ class TestPZSalesContract(IntegrationTestCase):
                 self.assertEqual(actual, expected, fieldname)
 
         explicit_zero_grace = contract(customer=customer, **(blank_fields | {'collection_grace': 0}))
-        self.assertEqual(explicit_zero_grace.collection_grace, 0)
+        self.assertIsNone(explicit_zero_grace.collection_grace)
 
         # Explicit currency-incompatible price lists/accounts are never
         # overwritten or accompanied by a partially copied profile bundle.
@@ -751,7 +751,7 @@ class TestPZSalesContract(IntegrationTestCase):
                         [f'{rate:.{digits}f}',f'{total:.{digits}f}'])
                     totals={r.select('td')[0].get_text(strip=True):r.select('td')[1].get_text(strip=True)
                         for r in soup.select('.totals tr')}
-                    for key,value in [('Subtotal',total),('Total · USD',total),('30% advance',required),('70% balance',balance)]:
+                    for key,value in [('Subtotal',total),('Contract Amount · USD',total),('30% advance',required),('70% balance',balance)]:
                         self.assertEqual(totals[key],f'{value:.{digits}f}')
                     self.assertIn(f'30% advance: {required:.{digits}f}',soup.get_text())
                     self.assertIn(f'Confirmed receipt allocation: {partial:.{digits}f}',soup.get_text())
@@ -1098,7 +1098,7 @@ class TestPZSalesContract(IntegrationTestCase):
         ])
         self.assertEqual(frappe.db.get_value('PZ Sales Contract',d.name,'tax_total'),0)
         html=frappe.get_print('PZ Sales Contract',d.name)
-        self.assertIn('not included in this contract total',html)
+        self.assertIn('Applicable taxes, if any, are recorded and calculated separately',html)
         self.assertNotIn('Identified taxes and charges',html)
 
     def test_new_contract_keeps_sales_order_draft_until_user_supplies_delivery_date(self):
@@ -1178,7 +1178,23 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertEqual(status.confirmed,0)
 
     def test_submitted_calendar_is_frozen_for_print_and_deadlines(self):
-        d=contract(submit=True,approval_received='2026-10-01T09:00:00+03:00',approval_evidence='Synthetic written approval')
+        d=contract()
+        d.db_set('terms_version', None)
+        d.db_set('terms_snapshot', None)
+        d.db_set('contract_scope_version', None)
+        d.reload()
+        d.delivery_date=today()
+        d.timezone='Asia/Baghdad'
+        d.business_days='Monday,Tuesday,Wednesday,Thursday,Friday'
+        d.opens_at='09:00:00'
+        d.closes_at='17:00:00'
+        d.holiday_list='PZ Synthetic Calendar'
+        d.collection_grace=48
+        d.grace_unit='Calendar hours'
+        d.approval_received='2026-10-01T09:00:00+03:00'
+        d.approval_evidence='Synthetic written approval'
+        d.save()
+        d.submit()
         before=d.advance_deadline
         calendar=frappe.get_doc('Holiday List',d.holiday_list)
         calendar.append('holidays',dict(holiday_date='2026-10-02',description='Later master change'))
