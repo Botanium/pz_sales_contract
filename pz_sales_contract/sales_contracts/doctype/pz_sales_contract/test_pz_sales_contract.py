@@ -249,6 +249,11 @@ class TestPZSalesContract(IntegrationTestCase):
         })
         doc.reload()
         self.complete_legacy_schedule(doc)
+        doc.timezone = 'Asia/Baghdad'
+        doc.business_days = 'Monday,Tuesday,Wednesday,Thursday,Friday'
+        doc.opens_at = '09:00:00'
+        doc.closes_at = '17:00:00'
+        doc.holiday_list = 'PZ Synthetic Calendar'
         doc.set('specifications', [])
         doc.append('specifications', dict(item_code='Bitumen - Bulk',
             property='Penetration', unit='dmm', test_method='Synthetic method',
