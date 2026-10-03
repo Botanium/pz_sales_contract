@@ -73,27 +73,27 @@ test("legacy contracts retain access to historical specifications", async () => 
   assert.equal(ui.fieldProperties["specifications.hidden"], false);
 });
 
-test("Item and Grade lookups ignore stale, cleared, and deleted child rows", () => {
+test("Item lookups ignore stale, cleared, and deleted child rows", async () => {
   const ui = desk();
   const row = { doctype: "PZ Contract Item", name: "line-1", item_code: "Item A" };
   ui.frm.doc.items = [row]; ui.locals["PZ Contract Item"][row.name] = row;
   ui.childEvents.item_code(ui.frm, row.doctype, row.name);
   row.item_code = "Item B"; ui.childEvents.item_code(ui.frm, row.doctype, row.name);
-  ui.lookups[1].callback({ item_name: "Item B", description: "B", stock_uom: "Nos" });
-  ui.lookups[0].callback({ item_name: "Item A", description: "A", stock_uom: "Kg" });
+  await ui.respond(1, { item_name: "Item B", description: "B", stock_uom: "Nos", packaging: "Drum" });
+  await ui.respond(0, { item_name: "Item A", description: "A", stock_uom: "Kg", packaging: "Bulk" });
   assert.equal(row.item_name, "Item B");
   assert.equal(row.uom, "Nos");
-
+  assert.equal(row.packaging, "Drum");
   row.item_code = "Item C"; ui.childEvents.item_code(ui.frm, row.doctype, row.name);
+  assert.equal(row.packaging, null);
   row.item_code = ""; ui.childEvents.item_code(ui.frm, row.doctype, row.name);
-  ui.lookups[2].callback({ item_name: "Stale C", description: "stale", stock_uom: "Kg" });
-  assert.equal(row.item_name, "Item B");
-
+  await ui.respond(2, { item_name: "Stale C", stock_uom: "Kg", packaging: "Bulk" });
+  assert.equal(row.item_name, null);
+  assert.equal(row.packaging, null);
   row.item_code = "Item D"; ui.childEvents.item_code(ui.frm, row.doctype, row.name);
-  ui.frm.doc.items = [];
-  delete ui.locals["PZ Contract Item"][row.name];
-  ui.lookups[3].callback({ item_name: "Deleted D", description: "stale", stock_uom: "Kg" });
-  assert.equal(row.item_name, "Item B");
+  ui.frm.doc.items = []; delete ui.locals["PZ Contract Item"][row.name];
+  await ui.respond(3, { item_name: "Deleted D", stock_uom: "Kg", packaging: "Bulk" });
+  assert.equal(row.item_name, null);
 });
 
 test("Grade Link snapshots follow the latest active selection and clearing", () => {
@@ -110,6 +110,42 @@ test("Grade Link snapshots follow the latest active selection and clearing", () 
   row.grade_master = null; ui.childEvents.grade_master(ui.frm, row.doctype, row.name);
   ui.lookups[1].callback({ disabled: 0 });
   assert.equal(row.grade, null);
+});
+
+test("packaging lookups preserve explicit edits, unknown products and historical snapshots", async () => {
+  const ui = desk();
+  const row = { doctype: "PZ Contract Item", name: "packaging-line", item_code: "Bitumen - Bulk", packaging: null };
+  ui.frm.doc.items = [row]; ui.locals["PZ Contract Item"][row.name] = row;
+  ui.childEvents.item_code(ui.frm, row.doctype, row.name);
+  row.packaging = "User edit";
+  await ui.respond(0, { item_name: row.item_code, stock_uom: "Tonne", packaging: "Bulk" });
+  assert.equal(row.packaging, "User edit");
+  row.item_code = "Unknown product";
+  ui.childEvents.item_code(ui.frm, row.doctype, row.name);
+  await ui.respond(1, { item_name: row.item_code, stock_uom: "Tonne", packaging: null });
+  assert.equal(row.packaging, null);
+  row.item_code = "Bitumen - Drum";
+  ui.childEvents.item_code(ui.frm, row.doctype, row.name);
+  ui.frm.doc = newDoc("another-doc", { items: [row] });
+  await ui.respond(2, { item_name: "Bitumen - Drum", packaging: "Drum" });
+  assert.equal(row.packaging, null, "navigation invalidates the old document response");
+
+  const history = desk(newDoc("saved", { __islocal: 0 }));
+  const saved = { ...row, item_code: "Bitumen - Bulk", packaging: "Historical text" };
+  history.frm.doc.items = [saved]; history.locals["PZ Contract Item"][saved.name] = saved;
+  history.childEvents.item_code(history.frm, saved.doctype, saved.name);
+  await history.respond(0, { item_name: saved.item_code, stock_uom: "Tonne", packaging: "Bulk" });
+  assert.equal(saved.packaging, "Historical text");
+});
+
+test("older saved contracts retain editable currency and their existing named-place entry", async () => {
+  const ui = desk(newDoc("legacy", { __islocal: 0, currency: "EUR", conversion_rate: 1.2, named_place: "Old port" }));
+  await ui.refresh();
+  assert.equal(ui.frm.doc.currency, "EUR");
+  assert.equal(ui.frm.doc.conversion_rate, 1.2);
+  assert.equal(ui.fieldProperties["currency.read_only"], false);
+  assert.equal(ui.fieldProperties["named_place.hidden"], false);
+  assert.equal(ui.fieldProperties["contract_location.hidden"], true);
 });
 
 test("each New contract loads defaults in a reused Desk form", async () => {
@@ -198,7 +234,7 @@ test("changing a copied bank clears only untouched copied instructions", async (
   assert.equal(ui.frm.doc.account_iban, null);
   assert.equal(ui.frm.doc.bank_branch, null);
   assert.equal(ui.frm.doc.swift_reference, null);
-  assert.equal(ui.frm.doc.selling_price_list, profile.selling_price_list);
+  assert.ok(!ui.frm.doc.selling_price_list, "price list is resolved on the server");
 });
 
 test("native unchanged Link triggers do not turn defaults into explicit overrides", async () => {
@@ -207,24 +243,27 @@ test("native unchanged Link triggers do not turn defaults into explicit override
   await ui.refresh();
   ui.events.selling_price_list(ui.frm); // Native trigger_link_fields replays unchanged links.
   await ui.respond();
-  assert.equal(ui.frm.doc.selling_price_list, profile.selling_price_list);
+  assert.equal(ui.frm.doc.selling_price_list, "Generic Prices");
   ui.events.bank_receiving_account(ui.frm);
   await ui.frm.set_value("currency", "EUR"); await flush();
   assert.equal(ui.frm.doc.bank_receiving_account, null);
   assert.equal(ui.frm.doc.account_iban, null);
 });
 
-test("a currency mismatch preserves deliberate values and can reload matching defaults", async () => {
-  const ui = desk(newDoc("new-1", { currency: "EUR", selling_price_list: "EUR Prices" }));
+test("new entry resets currency to read-only USD without copying price or FX defaults", async () => {
+  const ui = desk(newDoc("new-1", { currency: "EUR" }));
   await ui.refresh(); await ui.respond();
-  assert.equal(ui.frm.doc.currency, "EUR");
-  assert.equal(ui.frm.doc.selling_price_list, "EUR Prices");
-  assert.equal(ui.frm.doc.bank_receiving_account, undefined);
-  await ui.frm.set_value("currency", "USD");
-  assert.equal(ui.requests.length, 2);
-  await ui.respond();
-  assert.equal(ui.frm.doc.selling_price_list, "EUR Prices");
-  assert.equal(ui.frm.doc.bank_receiving_account, profile.bank_receiving_account);
+  assert.equal(ui.frm.doc.currency, "USD");
+  assert.equal(ui.fieldProperties["currency.read_only"], true);
+  assert.equal(ui.fieldProperties["conversion_rate.hidden"], true);
+  assert.equal(ui.fieldProperties["selling_price_list.hidden"], true);
+  assert.equal(ui.fieldProperties["contract_location.reqd"], true);
+  assert.equal(ui.frm.doc.selling_price_list, undefined);
+  assert.equal(ui.frm.doc.conversion_rate, undefined);
+  ui.frm.doc.currency = "EUR";
+  await assert.rejects(ui.events.before_save(ui.frm), /updating|must use USD/);
+  await flush();
+  await assert.rejects(ui.events.before_save(ui.frm), /must use USD/);
 });
 
 test("changing Company clears seller defaults and keeps customer and deal values", async () => {
@@ -451,17 +490,17 @@ test("currency changes during bank-instruction clearing are reconciled before sa
   await ui.frm.set_value("currency", "EUR");
   await assert.rejects(ui.events.before_save(ui.frm), /Company details.*updating/);
   finishEvent(); await bankChange; await flush();
-  assert.equal(ui.frm.doc.conversion_rate, null);
-  assert.equal(ui.frm.doc.selling_price_list, null);
+  assert.ok(!ui.frm.doc.conversion_rate);
+  assert.ok(!ui.frm.doc.selling_price_list);
   assert.equal(ui.frm.doc.account_iban, null);
   assert.equal(ui.frm.doc.bank_receiving_account, "Bank B");
   assert.equal(ui.frm.doc.currency, "EUR");
   assert.equal(ui.frm._pzCompanyDefaultsWork.size, 0);
-  await ui.events.before_save(ui.frm);
+  await assert.rejects(ui.events.before_save(ui.frm), /must use USD/);
   await ui.frm.set_value("currency", "USD"); await flush();
   assert.equal(ui.requests.length, 2);
   await ui.respond(1);
-  assert.equal(ui.frm.doc.selling_price_list, profile.selling_price_list);
+  assert.ok(!ui.frm.doc.selling_price_list, "price list is resolved on the server");
   assert.equal(ui.frm.doc.bank_receiving_account, "Bank B");
   assert.equal(ui.frm.doc.account_iban, null);
 });

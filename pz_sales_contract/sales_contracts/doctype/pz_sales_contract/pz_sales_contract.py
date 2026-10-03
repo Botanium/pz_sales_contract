@@ -7,6 +7,9 @@ from frappe.utils import getdate
 
 from pz_sales_contract.calendar import add_open_hours, schedule
 from pz_sales_contract.contract_terms import CURRENT_TERMS_VERSION, snapshot_for_new_contract
+from pz_sales_contract.entry_policy import (
+    ENTRY_POLICY_VERSION, apply_item_packaging, apply_usd_policy, uses_entry_policy, validate_location,
+)
 from pz_sales_contract.sales_contracts.doctype.pz_contract_defaults.pz_contract_defaults import (
     COMPANY_DEFAULT_FIELDS,
     get_allowed_contract_incoterms,
@@ -71,6 +74,9 @@ class PZSalesContract(Document):
         # Frappe may apply generic user defaults while an amendment is created.
         # Restore blank agreement values so creating an amendment never rewrites
         # the cancelled contract from current user defaults.
+        new_family = self.is_new() and not self.amended_from
+        if new_family and self.get('currency') not in (None, '', 'USD'):
+            frappe.throw('New contracts must use USD')
         initially_blank = {}
         initially_blank_currency_dependent = set()
         initially_blank_historical = set()
@@ -91,6 +97,11 @@ class PZSalesContract(Document):
                     initially_blank_currency_dependent.add(fieldname)
 
         super()._set_defaults()
+        if new_family:
+            self.currency = 'USD'
+            # These hidden values are resolved server-side after seller defaults.
+            self.conversion_rate = None
+            self.selling_price_list = None
         self._pz_initially_blank_currency_dependent_defaults = initially_blank_currency_dependent
 
         if self.amended_from:
@@ -125,11 +136,13 @@ class PZSalesContract(Document):
             # Amendments retain the source print/terms version. A legacy source
             # without a version stays on its historical print layout.
             self.terms_version = original.get('terms_version')
+            self.entry_policy_version = original.get('entry_policy_version')
         else:
             original = None
             self.first_family = frappe.generate_hash(length=20)
             self.contract_scope_version = ITEM_ONLY_DRAFT_SO_SCOPE
             self.terms_version = CURRENT_TERMS_VERSION
+            self.entry_policy_version = ENTRY_POLICY_VERSION
             # New v2 families never accept hidden legacy schedule data through
             # Desk defaults, imports, or REST payloads.
             self._clear_historical_contract_fields()
@@ -267,7 +280,7 @@ class PZSalesContract(Document):
     def validate(self):
         old = self.get_doc_before_save()
         if old:
-            for key in ['customer', 'company', 'first_family', 'sales_order', 'amended_from', 'contract_scope_version', 'terms_version']:
+            for key in ['customer', 'company', 'first_family', 'sales_order', 'amended_from', 'contract_scope_version', 'terms_version', 'entry_policy_version']:
                 if self.get(key) != old.get(key):
                     frappe.throw(f'{key} cannot be changed after creation')
             if self.terms_snapshot != old.terms_snapshot:
@@ -284,6 +297,12 @@ class PZSalesContract(Document):
             self.delivery_date = None
             self.set('taxes', [])
             self.tax_total = 0
+        entry_source = old
+        if not entry_source and self.amended_from:
+            entry_source = frappe.get_doc(self.doctype, self.amended_from)
+            entry_source.check_permission('read')
+        apply_usd_policy(self, entry_source)
+        validate_location(self, entry_source)
         self.validate_specifications()
         self.validate_links_and_snapshots(old)
         self.validate_schedule()
@@ -358,6 +377,9 @@ class PZSalesContract(Document):
             master.check_permission('read')
             if master.disabled or not master.is_sales_item or item.qty <= 0 or item.rate <= 0:
                 frappe.throw('Choose an enabled sales Item and positive quantity/rate')
+            if uses_entry_policy(self):
+                previous = next((r for r in (old.items if old else []) if r.name == item.name), None)
+                apply_item_packaging(item, previous)
             factor = 1 if item.uom == master.stock_uom else next((r.conversion_factor for r in master.uoms if r.uom == item.uom), None)
             if not factor or factor <= 0:
                 frappe.throw(f'No ERP UOM conversion exists for {item.item_code}: {item.uom}')

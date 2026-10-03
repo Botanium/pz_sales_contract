@@ -79,6 +79,9 @@ def ensure_synthetic_grade_prerequisites():
 def setup_fixtures():
     require_disposable_test_site()
     frappe.set_user('Administrator')
+    if not frappe.db.exists('PZ Contract Location', 'PZ-SYNTHETIC-LOCATION'):
+        frappe.get_doc(dict(doctype='PZ Contract Location', location_name='Synthetic pickup point')).insert(
+            set_name='PZ-SYNTHETIC-LOCATION')
     # Fresh ERPNext sites have no setup-wizard tree roots yet. Create only the
     # synthetic-test prerequisites instead of relying on an existing pilot setup.
     ensure_synthetic_grade_prerequisites()
@@ -110,6 +113,7 @@ def setup_fixtures():
             year_start_date=f'{year}-01-01', year_end_date=f'{year}-12-31')).insert()
     if not frappe.db.exists('Price List', 'PZ Synthetic USD'):
         frappe.get_doc(dict(doctype='Price List',price_list_name='PZ Synthetic USD',currency='USD',selling=1,enabled=1)).insert()
+    frappe.db.set_single_value('Selling Settings', 'selling_price_list', 'PZ Synthetic USD')
     for code, title in [
         ('EXW', 'Ex Works'), ('FOB', 'Free On Board'), ('CIF', 'Cost Insurance and Freight'),
         ('FCA', 'Free Carrier'),
@@ -181,7 +185,7 @@ def contract(customer=None, submit=False, insert=True, submit_sales_order=True, 
             grade_master=synthetic_bitumen_grade(),grade='PZ-SYNTHETIC-60-70',
             packaging='Synthetic drums',specification_reference='Synthetic specification QA-001')],
         specifications=[],
-        discount_amount=0,incoterm='EXW',named_place='Synthetic pickup point',delivery_arrangement='Synthetic signed loading arrangement',
+        discount_amount=0,incoterm='EXW',contract_location='PZ-SYNTHETIC-LOCATION',named_place='Synthetic pickup point',delivery_arrangement='Synthetic signed loading arrangement',
         transport_responsibility='Buyer (synthetic agreement)',insurance_responsibility='Buyer (synthetic agreement)',
         measurement_basis='Synthetic units; no tolerance or price adjustment agreed',timezone='Asia/Baghdad',
         business_days='Monday,Tuesday,Wednesday,Thursday,Friday',opens_at='09:00:00',closes_at='17:00:00',holiday_list='PZ Synthetic Calendar',

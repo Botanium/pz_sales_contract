@@ -133,7 +133,7 @@ function nativeDesk({ nativeRequests = false } = {}) {
   Object.assign(doc, {
     seller_address: "Address A", seller_signatory: "Signer A", seller_position: "Position A",
     currency: "USD", conversion_rate: 1, bank_receiving_account: "Bank A", cash_receiving_account: null,
-    incoterm: "FOB",
+    incoterm: "FOB", contract_location: "Synthetic Location",
   });
   locals[doc.doctype] = { [doc.name]: doc };
   for (const [fieldname, dt] of [["items", "PZ Contract Item"], ["specifications", "PZ Contract Specification"]]) {

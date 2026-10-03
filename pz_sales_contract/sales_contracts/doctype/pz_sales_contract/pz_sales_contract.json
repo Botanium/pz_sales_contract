@@ -27,6 +27,7 @@
     "in_words",
     "delivery",
     "incoterm",
+    "contract_location",
     "named_place",
     "specs",
     "specifications",
@@ -87,7 +88,8 @@
     "terms_snapshot",
     "terms_version",
     "contract_scope_version",
-    "cancelled_sales_order_reference"
+    "cancelled_sales_order_reference",
+    "entry_policy_version"
   ],
   "fields": [
     {
@@ -115,7 +117,7 @@
       "options": "Company",
       "reqd": 1,
       "in_list_view": 1,
-      "description": "Optional Company Contract Defaults fill blank seller, currency, price-list and receiving-account fields. Incoterms are filtered to built-in and Company choices; no term is auto-selected."
+      "description": "Choose the seller. Optional Company Contract Defaults fill seller and USD receiving-account details."
     },
     {
       "fieldname": "transaction_date",
@@ -222,20 +224,18 @@
       "fieldtype": "Link",
       "options": "Currency",
       "reqd": 1,
-      "description": "A Company default fills this only when blank and never replaces a nonblank currency. Rate, price list and receiving-account defaults load only when currencies match; enter a coherent bundle for this deal."
+      "description": "New contracts use USD. Accounting conversion is resolved from configured Currency Exchange records."
     },
     {
       "fieldname": "conversion_rate",
       "label": "Exchange rate to company currency",
-      "fieldtype": "Float",
-      "reqd": 1
+      "fieldtype": "Float"
     },
     {
       "fieldname": "selling_price_list",
       "label": "Selling price list",
       "fieldtype": "Link",
-      "options": "Price List",
-      "reqd": 1
+      "options": "Price List"
     },
     {
       "fieldname": "items",
@@ -317,7 +317,8 @@
       "fieldname": "named_place",
       "label": "Incoterm named place",
       "fieldtype": "Data",
-      "reqd": 1
+      "reqd": 1,
+      "description": "Saved location text used in this contract and its Sales Order."
     },
     {
       "fieldname": "delivery_terms",
@@ -635,6 +636,20 @@
       "fieldtype": "Data",
       "read_only": 1,
       "hidden": 1
+    },
+    {
+      "fieldname": "contract_location",
+      "label": "Incoterm location",
+      "fieldtype": "Link",
+      "options": "PZ Contract Location",
+      "description": "Select a location. Contract Managers can add locations such as Bandar Abbas or Mersin, Turkey."
+    },
+    {
+      "fieldname": "entry_policy_version",
+      "label": "Entry policy version (internal)",
+      "fieldtype": "Data",
+      "hidden": 1,
+      "read_only": 1
     }
   ],
   "permissions": [
