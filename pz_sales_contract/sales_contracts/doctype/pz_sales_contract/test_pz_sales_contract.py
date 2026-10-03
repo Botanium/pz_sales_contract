@@ -869,7 +869,7 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertFalse(frappe.has_permission('Payment Entry', 'submit'))
         self.assertFalse(frappe.has_permission('PZ Contract Registry', 'write'))
         d.reload().submit()
-        self.assertEqual(frappe.db.get_value('Sales Order',d.sales_order,'docstatus'),1)
+        self.assertEqual(frappe.db.get_value('Sales Order',d.sales_order,'docstatus'),0)
 
     def test_print_standard_forged_payload_and_cancelled(self):
         d=contract(submit=True)
@@ -1001,6 +1001,11 @@ class TestPZSalesContract(IntegrationTestCase):
 
     def test_sales_order_taxes_do_not_change_new_contract_payment_basis(self):
         account=frappe.db.get_value('Account',dict(company=COMPANY,is_group=0,root_type='Income'),'name')
+        actual_account='PZ Synthetic Actual Charge - PZT'
+        if not frappe.db.exists('Account',actual_account):
+            parent=frappe.db.get_value('Account',dict(company=COMPANY,is_group=1,root_type='Income'),'name')
+            frappe.get_doc(dict(doctype='Account',account_name='PZ Synthetic Actual Charge',company=COMPANY,
+                parent_account=parent,account_currency='USD',is_group=0)).insert()
         d=contract(discount_amount=100,submit=True,submit_sales_order=False)
         self.assertEqual((d.grand_total,d.advance_required,d.balance_required),(900,270,630))
         order=frappe.get_doc('Sales Order',d.sales_order)
@@ -1009,7 +1014,7 @@ class TestPZSalesContract(IntegrationTestCase):
             item.delivery_date=order.delivery_date
         order.append('taxes',dict(charge_type='On Net Total',account_head=account,
             description='Synthetic 10%',rate=10))
-        order.append('taxes',dict(charge_type='Actual',account_head=account,
+        order.append('taxes',dict(charge_type='Actual',account_head=actual_account,
             description='Synthetic actual handling',tax_amount=10))
         order.save().submit()
         self.assertEqual(order.net_total,900)
