@@ -508,9 +508,11 @@ class PZSalesContract(Document):
                 # failure rolls the contract cancellation back as one transaction.
                 order.check_permission('delete')
                 reference = order.name
-                frappe.delete_doc('Sales Order', reference)
                 self.db_set('cancelled_sales_order_reference', reference)
                 self.db_set('sales_order', None)
+                self.cancelled_sales_order_reference = reference
+                self.sales_order = None
+                frappe.delete_doc('Sales Order', reference)
 
     def before_update_after_submit(self):
         self.validate_schedule()

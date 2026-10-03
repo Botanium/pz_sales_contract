@@ -117,7 +117,7 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertEqual(frappe.db.get_value('PZ Sales Contract',d.name,'grand_total'),900)
         self.assertEqual(frappe.db.get_value('Sales Order',d.sales_order,'named_place'),d.named_place)
         self.assertEqual(d.items[0].item_name,'Synthetic Bitumen')
-        self.assertIn('Nine Hundred And Ninety',d.in_words)
+        self.assertIn('Nine Hundred only',d.in_words)
         self.assertIn('Synthetic customer',d.address_display)
         self.assertEqual(frappe.db.get_value('Sales Order Item',
             {'parent': d.sales_order, 'idx': 1}, 'custom_bitumen_grade'), d.items[0].grade_master)
@@ -1013,7 +1013,9 @@ class TestPZSalesContract(IntegrationTestCase):
             description='Synthetic actual handling',tax_amount=10))
         order.save().submit()
         self.assertEqual(order.net_total,900)
-        self.assertEqual(order.grand_total,1000)
+        self.assertEqual(order.grand_total,1000, [
+            (tax.charge_type, tax.rate, tax.tax_amount, tax.total) for tax in order.taxes
+        ])
         self.assertEqual(frappe.db.get_value('PZ Sales Contract',d.name,'tax_total'),0)
         html=frappe.get_print('PZ Sales Contract',d.name)
         self.assertIn('not included in this contract total',html)

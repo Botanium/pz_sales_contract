@@ -48,7 +48,12 @@ def ensure_synthetic_grade_prerequisites():
                 dict(fieldname='disabled', label='Disabled', fieldtype='Check'),
                 dict(fieldname='notes', label='Notes', fieldtype='Small Text'),
             ],
+            permissions=[
+                dict(role='PZ Sales Contract User', read=1, select=1),
+                dict(role='PZ Sales Contract Manager', read=1, select=1),
+            ],
         )).insert(ignore_permissions=True)
+        frappe.clear_cache(doctype='Bitumen Grade')
 
     if not frappe.get_meta('Sales Order Item').has_field('custom_bitumen_grade'):
         from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
