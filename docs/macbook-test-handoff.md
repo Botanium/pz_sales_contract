@@ -4,7 +4,14 @@ This handoff is for a disposable v16 test site on the MacBook. Do not run these 
 
 ## Automated synthetic suite
 
-From the test bench, run the command already used by CI. `setup_fixtures()` creates a minimal synthetic `Bitumen Grade` DocType and the `Sales Order Item.custom_bitumen_grade` Link field only when absent, on this disposable test site. These test prerequisites are not installed by the app and must not be created on production:
+Use a disposable site named with the `pz-contract-test.` prefix and enable `allow_tests`; fixture helpers refuse to run outside a matching test site. For example:
+
+```sh
+bench new-site pz-contract-test.localhost
+bench --site pz-contract-test.localhost set-config allow_tests true
+```
+
+`setup_fixtures()` creates a minimal synthetic `Bitumen Grade` DocType and the `Sales Order Item.custom_bitumen_grade` Link field only when absent, on this disposable test site. These test prerequisites are not installed by the app and must not be created on production. Run the command already used by CI:
 
 ```sh
 bench --site TEST_SITE run-tests --app pz_sales_contract
@@ -25,7 +32,7 @@ Use an empty/disposable site with the app's synthetic fixture setup. Capture the
 - Switch Company on an unsaved contract; confirm prior seller/account defaults clear, the new Company's approved defaults load, and no legal schedule or Incoterm choice is silently selected.
 - Verify customer, company, date, price list, signer, position and account fields save and reload. Confirm hidden legal defaults stay blank for new contracts.
 - Generate native PDF with the bench wkhtmltopdf route and inspect pagination, signatures, the active terms snapshot and the blank schedule/approval language. The schedule/approval copy is a release blocker until reviewed and reconciled; do not mark the PDF legally approved.
-- Check role access on a disposable site: `PZ Sales Contract User` can create/read/write/print but cannot submit/cancel; `PZ Sales Contract Manager` has those contract actions; generic `Sales User`, `Sales Manager`, `Accounts Manager` and `System Manager` do not gain incidental contract access. Administrator retains native full access. Verify native Sales Order permissions separately for each real intended user before deployment.
+- Check role access on a disposable site: `PZ Sales Contract User` can create/read/write/print but cannot submit/cancel; `PZ Sales Contract Manager` has those contract actions; generic `Sales User`, `Sales Manager`, `Accounts Manager` and `System Manager` do not gain incidental contract access. Administrator retains native full access. Verify native Sales Order create/submit/cancel permissions separately for each intended user; users who cancel a contract while its linked order is Draft also need native Sales Order Delete permission. Verify those prerequisites before deployment.
 
 ## Release gate
 

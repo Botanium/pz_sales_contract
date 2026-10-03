@@ -4,9 +4,17 @@ from frappe.utils import today, add_days, getdate
 from erpnext.accounts.doctype.payment_entry.payment_entry import get_payment_entry
 
 COMPANY = 'PZ Synthetic QA'
+DISPOSABLE_SITE_PREFIXES = ('pz-contract-test.', 'pz-contract-ci.')
+
+
+def require_disposable_test_site():
+    site = getattr(frappe.local, 'site', None)
+    if not site or not site.startswith(DISPOSABLE_SITE_PREFIXES) or not frappe.conf.allow_tests:
+        frappe.throw('Synthetic contract fixtures run only on dedicated disposable test sites with allow_tests enabled')
 
 
 def synthetic_bitumen_grade(grade_code='60/70'):
+    require_disposable_test_site()
     if not frappe.db.exists('DocType', 'Bitumen Grade'):
         frappe.throw('The Bitumen Grade master must be installed for synthetic contract tests')
     token = grade_code.replace('/', '-')
@@ -38,6 +46,7 @@ def synthetic_bitumen_grade(grade_code='60/70'):
 
 def ensure_synthetic_grade_prerequisites():
     """Install only missing external Grade prerequisites on disposable test sites."""
+    require_disposable_test_site()
     if not frappe.db.exists('DocType', 'Bitumen Grade'):
         frappe.get_doc(dict(
             doctype='DocType', name='Bitumen Grade', module='Sales Contracts',
@@ -68,6 +77,7 @@ def ensure_synthetic_grade_prerequisites():
 
 
 def setup_fixtures():
+    require_disposable_test_site()
     frappe.set_user('Administrator')
     # Fresh ERPNext sites have no setup-wizard tree roots yet. Create only the
     # synthetic-test prerequisites instead of relying on an existing pilot setup.
@@ -143,6 +153,7 @@ def setup_fixtures():
 
 
 def new_customer():
+    require_disposable_test_site()
     customer='PZ Synthetic Customer '+frappe.generate_hash(length=8)
     frappe.get_doc(dict(doctype='Customer',customer_name=customer,customer_type='Company',
         customer_group='PZ Synthetic Customers',territory='PZ Synthetic Territory')).insert()
@@ -156,6 +167,7 @@ def new_customer():
 
 
 def contract(customer=None, submit=False, insert=True, submit_sales_order=True, **values):
+    require_disposable_test_site()
     if not customer:
         customer,address,contact=new_customer()
     else:
@@ -198,6 +210,7 @@ def contract(customer=None, submit=False, insert=True, submit_sales_order=True, 
 
 
 def receipt(doc, amount, cash=False, submit=True):
+    require_disposable_test_site()
     payment=get_payment_entry('Sales Order',doc.sales_order,party_amount=amount,
         bank_amount=amount,bank_account=f'PZ Synthetic {"Cash" if cash else "Bank"} - PZT')
     payment.reference_no='SYNTHETIC-'+frappe.generate_hash(length=6)
@@ -212,6 +225,7 @@ def receipt(doc, amount, cash=False, submit=True):
 
 
 def refund(doc, amount, reference_doctype='Sales Order', reference_name=None, allocations=None):
+    require_disposable_test_site()
     payment=get_payment_entry(reference_doctype,reference_name or doc.sales_order,
         party_amount=amount,bank_amount=amount,bank_account='PZ Synthetic Cash - PZT')
     if payment.payment_type == 'Receive':
@@ -231,6 +245,7 @@ def refund(doc, amount, reference_doctype='Sales Order', reference_name=None, al
 
 
 def reconcile(payment, bank_account, amount=None, submit=True):
+    require_disposable_test_site()
     bt=frappe.get_doc(dict(doctype='Bank Transaction',date=today(),deposit=amount or payment.received_amount,
         withdrawal=0,currency='USD',bank_account=bank_account,company=COMPANY,
         description='Synthetic contract reconciliation',transaction_id='SYNTHETIC-'+frappe.generate_hash(length=10))).insert()

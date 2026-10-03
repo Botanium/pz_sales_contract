@@ -88,6 +88,10 @@ class TestContractFormDefinition(unittest.TestCase):
         self.assertIn('gradeMaster, ["disabled"]', self.javascript)
         synthetic_fixtures = (ROOT / "pz_sales_contract/testing.py").read_text()
         self.assertIn("code_field = 'grade_code' if meta.has_field('grade_code') else None", synthetic_fixtures)
+        self.assertIn("def require_disposable_test_site():", synthetic_fixtures)
+        self.assertIn("not frappe.conf.allow_tests", synthetic_fixtures)
+        fixture_setup = synthetic_fixtures.split("def setup_fixtures():", 1)[1].split("\ndef new_customer", 1)[0]
+        self.assertIn("require_disposable_test_site()", fixture_setup)
 
         specification_schema = json.loads((ROOT / "pz_sales_contract/sales_contracts/doctype/pz_contract_specification/pz_contract_specification.json").read_text())
         specification_required_fields = {
