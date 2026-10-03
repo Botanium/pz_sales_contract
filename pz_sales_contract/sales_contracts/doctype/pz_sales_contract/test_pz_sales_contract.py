@@ -47,6 +47,32 @@ class TestPZSalesContract(IntegrationTestCase):
         if frappe.db.exists('PZ Contract Defaults', COMPANY):
             frappe.delete_doc('PZ Contract Defaults', COMPANY, ignore_permissions=True)
 
+    def complete_legacy_schedule(self, doc):
+        for fieldname, value in {
+            'delivery_date': today(),
+            'delivery_arrangement': 'Synthetic agreed delivery arrangement',
+            'transport_responsibility': 'Buyer transport (synthetic)',
+            'insurance_responsibility': 'Buyer insurance (synthetic)',
+            'measurement_basis': 'Synthetic unit; no tolerance or price adjustment agreed',
+            'notice_channel': 'synthetic-contract-notices@example.invalid',
+            'collection_grace': 48,
+            'grace_unit': 'Calendar hours',
+            'collection_arrangement': 'Synthetic appointment only',
+            'delay_charges': 'None agreed (synthetic)',
+            'penalty_basis_cap': 'None agreed (synthetic)',
+            'cure_period': '5 calendar days (synthetic)',
+            'latent_claim_period': '7 calendar days after discovery (synthetic)',
+            'force_majeure_threshold': '30 calendar days (synthetic)',
+            'governing_law': 'Synthetic placeholder; not legal advice or real agreement',
+            'courts': 'Synthetic courts placeholder',
+        }.items():
+            doc.set(fieldname, value)
+        if not doc.specifications:
+            doc.append('specifications', dict(item_code='PZ Synthetic Bitumen',
+                property='Penetration', unit='dmm', test_method='Synthetic method',
+                requirement='60-70 (demo only)'))
+        return doc
+
     def synthetic_company_defaults(self, **overrides):
         values = dict(
             doctype='PZ Contract Defaults',
@@ -176,11 +202,21 @@ class TestPZSalesContract(IntegrationTestCase):
     def test_legacy_contracts_require_specifications_while_v2_omits_them(self):
         specification = dict(item_code='PZ Synthetic Bitumen', property='Penetration', unit='dmm',
             test_method='Synthetic method', requirement='60-70 (demo only)')
-        legacy = contract(insert=False, terms_version=None)
+        legacy = contract(insert=False, terms_version=None, delivery_date=today())
         with self.assertRaises(frappe.ValidationError):
-            legacy.validate_specifications()
-        legacy.append('specifications', specification)
-        legacy.validate_specifications()
+            legacy.validate_legacy_contract_requirements()
+
+        legacy = contract(insert=False, terms_version=None, delivery_date=today(),
+            items=[
+                dict(item_code='PZ Synthetic Bitumen', grade='60/70', packaging='Synthetic drums',
+                    qty=10, uom='Nos', rate=100, specification_reference='Synthetic reference A'),
+                dict(item_code='PZ Synthetic Binder', grade='80/100', packaging='Synthetic drums',
+                    qty=5, uom='Nos', rate=100, specification_reference='Synthetic reference B'),
+            ], specifications=[specification])
+        with self.assertRaises(frappe.ValidationError):
+            legacy.validate_legacy_contract_requirements()
+        legacy.append('specifications', dict(specification, item_code='PZ Synthetic Binder'))
+        legacy.validate_legacy_contract_requirements()
 
         simplified = contract(insert=False, terms_version=CURRENT_TERMS_VERSION)
         simplified.validate_specifications()
@@ -189,8 +225,19 @@ class TestPZSalesContract(IntegrationTestCase):
             simplified.validate_specifications()
 
     def test_legacy_schedule_cannot_bypass_missing_inputs_but_v2_has_no_schedule(self):
-        legacy = contract(insert=False, terms_version=None, contract_scope_version=None)
+        legacy = contract(insert=False, terms_version=None, contract_scope_version=None,
+            delivery_date=today(), specifications=[dict(item_code='PZ Synthetic Bitumen',
+                property='Penetration', unit='dmm', test_method='Synthetic method',
+                requirement='60-70 (demo only)')])
         legacy.timezone = None
+        with self.assertRaises(frappe.ValidationError):
+            legacy.validate_schedule()
+        legacy.timezone = 'Asia/Baghdad'
+        legacy.delivery_arrangement = None
+        with self.assertRaises(frappe.ValidationError):
+            legacy.validate_schedule()
+        legacy.delivery_arrangement = 'Synthetic agreed delivery arrangement'
+        legacy.governing_law = None
         with self.assertRaises(frappe.ValidationError):
             legacy.validate_schedule()
 
@@ -1000,6 +1047,7 @@ class TestPZSalesContract(IntegrationTestCase):
         d.db_set('contract_scope_version', None)
         d.db_set('terms_snapshot', None)
         d.reload()
+        self.complete_legacy_schedule(d)
         d.delivery_date = today()
         d.timezone = 'Asia/Baghdad'
         d.business_days = 'Monday,Tuesday,Wednesday,Thursday,Friday'
@@ -1222,6 +1270,7 @@ class TestPZSalesContract(IntegrationTestCase):
         d.db_set('terms_snapshot', None)
         d.db_set('contract_scope_version', None)
         d.reload()
+        self.complete_legacy_schedule(d)
         d.delivery_date=today()
         d.timezone='Asia/Baghdad'
         d.business_days='Monday,Tuesday,Wednesday,Thursday,Friday'

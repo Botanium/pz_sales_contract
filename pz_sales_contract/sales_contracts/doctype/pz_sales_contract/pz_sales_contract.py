@@ -39,6 +39,25 @@ HISTORICAL_CONTRACT_FIELDS = (
     'ready_received', 'ready_evidence', 'balance_deadline', 'collection_deadline',
 )
 
+# Exact mandatory top-level values retained from the original legacy DocType.
+# V2 is excluded from these checks because it has a different approved form and print.
+LEGACY_REQUIRED_CONTRACT_FIELDS = (
+    'customer', 'company', 'transaction_date', 'delivery_date', 'customer_address',
+    'contact_person', 'seller_address', 'seller_signatory', 'seller_position',
+    'buyer_position', 'currency', 'conversion_rate', 'selling_price_list', 'items',
+    'incoterm', 'named_place', 'delivery_arrangement', 'transport_responsibility',
+    'insurance_responsibility', 'measurement_basis', 'timezone', 'business_days',
+    'opens_at', 'closes_at', 'holiday_list', 'notice_channel', 'collection_grace',
+    'grace_unit', 'collection_arrangement', 'delay_charges', 'penalty_basis_cap',
+    'cure_period', 'latent_claim_period', 'force_majeure_threshold', 'governing_law',
+    'courts', 'specifications', 'bank_receiving_account', 'beneficiary', 'bank_branch',
+    'account_iban', 'swift_reference',
+)
+LEGACY_REQUIRED_ITEM_FIELDS = (
+    'item_code', 'grade', 'packaging', 'qty', 'uom', 'rate', 'specification_reference',
+)
+LEGACY_REQUIRED_SPECIFICATION_FIELDS = ('item_code', 'property', 'test_method', 'requirement')
+
 
 def grade_snapshot(grade):
     """Use the configured Grade code, falling back to its canonical Link name."""
@@ -265,8 +284,6 @@ class PZSalesContract(Document):
             self.delivery_date = None
             self.set('taxes', [])
             self.tax_total = 0
-        elif not self.delivery_date:
-            frappe.throw('Legacy contracts require their saved planned delivery date')
         self.validate_specifications()
         self.validate_links_and_snapshots(old)
         self.validate_schedule()
@@ -358,8 +375,33 @@ class PZSalesContract(Document):
         if self.get('terms_version') == CURRENT_TERMS_VERSION:
             if self.specifications:
                 frappe.throw('Product specification rows are not part of the simplified contract version')
-        elif not self.specifications:
-            frappe.throw('Legacy contracts require agreed product specifications for Appendix A')
+
+    def validate_legacy_contract_requirements(self):
+        missing = []
+        for fieldname in LEGACY_REQUIRED_CONTRACT_FIELDS:
+            value = self.get(fieldname)
+            if fieldname in {'items', 'specifications'}:
+                if not value:
+                    missing.append(fieldname)
+            elif value in (None, ''):
+                missing.append(fieldname)
+
+        for index, row in enumerate(self.items, start=1):
+            for fieldname in LEGACY_REQUIRED_ITEM_FIELDS:
+                if row.get(fieldname) in (None, ''):
+                    missing.append(f'items[{index}].{fieldname}')
+        for index, row in enumerate(self.specifications, start=1):
+            for fieldname in LEGACY_REQUIRED_SPECIFICATION_FIELDS:
+                if row.get(fieldname) in (None, ''):
+                    missing.append(f'specifications[{index}].{fieldname}')
+
+        if missing:
+            frappe.throw('Legacy contracts require all fields mandatory in the original form: ' + ', '.join(missing))
+
+        item_codes = {row.item_code for row in self.items}
+        specification_item_codes = {row.item_code for row in self.specifications}
+        if item_codes != specification_item_codes:
+            frappe.throw('Enter agreed specifications for every product')
 
     def validate_grade_masters(self, old=None, require_active=False):
         historical = old
@@ -432,13 +474,7 @@ class PZSalesContract(Document):
         if self.uses_item_only_draft_order():
             # V2 does not carry the historical Commercial Schedule.
             return
-        required_inputs = (
-            'timezone', 'business_days', 'opens_at', 'closes_at', 'holiday_list',
-            'collection_grace', 'grace_unit',
-        )
-        missing = [fieldname for fieldname in required_inputs if self.get(fieldname) in (None, '')]
-        if missing:
-            frappe.throw('Legacy contracts require a complete Commercial Schedule')
+        self.validate_legacy_contract_requirements()
         old = self.get_doc_before_save()
         if old and old.docstatus == 1 and old.holiday_calendar_snapshot:
             self.holiday_calendar_snapshot = old.holiday_calendar_snapshot
