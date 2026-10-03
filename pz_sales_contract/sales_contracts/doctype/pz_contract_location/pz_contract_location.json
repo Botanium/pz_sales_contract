@@ -1,0 +1,46 @@
+{
+  "doctype": "DocType",
+  "name": "PZ Contract Location",
+  "module": "Sales Contracts",
+  "custom": 0,
+  "engine": "InnoDB",
+  "autoname": "hash",
+  "title_field": "location_name",
+  "show_title_field_in_link": 1,
+  "search_fields": "location_name",
+  "quick_entry": 1,
+  "track_changes": 1,
+  "field_order": [
+    "location_name",
+    "disabled"
+  ],
+  "fields": [
+    {
+      "fieldname": "location_name",
+      "label": "Location",
+      "fieldtype": "Data",
+      "reqd": 1,
+      "unique": 1,
+      "in_list_view": 1,
+      "description": "For example: Bandar Abbas; Mersin, Turkey."
+    },
+    {
+      "fieldname": "disabled",
+      "label": "Disabled",
+      "fieldtype": "Check",
+      "default": "0"
+    }
+  ],
+  "permissions": [
+    {
+      "role": "PZ Sales Contract User",
+      "read": 1
+    },
+    {
+      "role": "PZ Sales Contract Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1
+    }
+  ]
+}

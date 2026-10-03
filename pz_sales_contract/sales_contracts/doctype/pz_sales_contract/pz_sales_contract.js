@@ -1,10 +1,14 @@
 const defaultContractIncoterms = ["EXW", "FOB", "CIF"];
 const contractChildLookupStates = new WeakMap();
 
+function usesUsdEntry(frm) {
+  return frm.doc.entry_policy_version === "usd-location-v1" || (frm.is_new() && !frm.doc.amended_from);
+}
+
 function contractChildLookupState(row) {
   let state = contractChildLookupStates.get(row);
   if (!state) {
-    state = { itemRequest: 0, gradeRequest: 0, gradeMaster: null };
+    state = { itemRequest: 0, itemCode: row.item_code || null, gradeRequest: 0, gradeMaster: null };
     contractChildLookupStates.set(row, state);
   }
   return state;
@@ -264,7 +268,11 @@ function missingItemFields(row, historicGradeAllowed) {
 }
 
 function checklistStatus(doc, group) {
-  let missing = (group.fields || []).filter((fieldname) => isMissingValue(fieldname, doc[fieldname])).length;
+  const newEntry = doc.entry_policy_version === "usd-location-v1" || (doc.__islocal && !doc.amended_from);
+  let fields = group.fields || [];
+  if (newEntry) fields = fields.filter((fieldname) => !["conversion_rate", "selling_price_list", "named_place"].includes(fieldname));
+  if (newEntry && group.firstField === "incoterm") fields = [...fields, "contract_location"];
+  let missing = fields.filter((fieldname) => isMissingValue(fieldname, doc[fieldname])).length;
   if (group.table === "items") {
     const rows = doc.items || [];
     const historicGradeAllowed = !doc.__islocal || Boolean(doc.amended_from);
@@ -385,6 +393,7 @@ function loadCompanyDefaults(frm, expectedCompany, requestId) {
             showCompanyCurrencyMismatch(configured.currency, frm.doc.currency);
           }
           for (const fieldname of companyDefaultFields) {
+            if (usesUsdEntry(frm) && ["currency", "conversion_rate", "selling_price_list"].includes(fieldname)) continue;
             const dependent = currencyDependentDefaultFields.includes(fieldname);
             const replaceFrameworkDefault = dependent && frm._pzCompanyDefaultsHasCurrencyDependentDefaults
               && isUntouchedFrameworkCurrencyDefault(frm, fieldname);
@@ -453,7 +462,9 @@ function clearCompanySpecificValues(frm) {
   ensureCompanyDefaultsDocument(frm);
   if (!frm.is_new() || frm.doc.amended_from) return;
   const doc = frm.doc;
-  const clear = Object.fromEntries([...companyDefaultFields, "seller_address_display"].map((fieldname) => [fieldname, null]));
+  const clear = Object.fromEntries([...companyDefaultFields, "seller_address_display"]
+    .filter((fieldname) => !(usesUsdEntry(frm) && fieldname === "currency"))
+    .map((fieldname) => [fieldname, null]));
   frm._pzCompanyDefaultsPendingClear = {
     company: doc.company,
     before: Object.fromEntries(Object.keys(clear).map((fieldname) => [fieldname, doc[fieldname]])),
@@ -535,6 +546,7 @@ frappe.ui.form.on("PZ Sales Contract", {
     ])]] } }));
     frm.set_query("item_code", "items", () => ({ filters: { disabled: 0, is_sales_item: 1 } }));
     frm.set_query("grade_master", "items", () => ({ filters: { disabled: 0 } }));
+    frm.set_query("contract_location", () => ({ filters: { disabled: 0 } }));
     frm.set_query("bank_receiving_account", () => ({ filters: { company: frm.doc.company, account_type: "Bank", is_group: 0, disabled: 0 } }));
     frm.set_query("cash_receiving_account", () => ({ filters: { company: frm.doc.company, account_type: "Cash", is_group: 0, disabled: 0 } }));
     frm.set_query("selling_price_list", () => ({ filters: { enabled: 1, selling: 1 } }));
@@ -552,11 +564,21 @@ frappe.ui.form.on("PZ Sales Contract", {
     if (frm._pzCompanyDefaultsPendingClear || frm._pzCompanyDefaultsWork.size) {
       frappe.throw(__("Company details are still updating. Wait for the update to finish, check the values, then save again."));
     }
+    if (usesUsdEntry(frm) && frm.doc.currency !== "USD") frappe.throw(__("New contracts must use USD."));
     // Always return a promise. A synchronous handler would make ScriptManager
     // wait for unrelated AJAX after this check and reopen the save race.
   },
   refresh(frm) {
     ensureCompanyDefaultsDocument(frm);
+    const usdEntry = usesUsdEntry(frm);
+    frm.set_df_property("currency", "read_only", usdEntry);
+    for (const fieldname of ["conversion_rate", "selling_price_list", "named_place"]) {
+      frm.set_df_property(fieldname, "hidden", usdEntry);
+    }
+    frm.set_df_property("named_place", "reqd", !usdEntry);
+    frm.set_df_property("contract_location", "hidden", !usdEntry);
+    frm.set_df_property("contract_location", "reqd", usdEntry);
+    if (usdEntry && frm.doc.currency !== "USD") frm.set_value("currency", "USD");
     const simplifiedContract = frm.doc.terms_version === "v2" || (frm.is_new() && !frm.doc.amended_from);
     frm.set_df_property("specifications_section", "hidden", simplifiedContract);
     frm.set_df_property("specifications", "hidden", simplifiedContract);
@@ -644,6 +666,7 @@ frappe.ui.form.on("PZ Sales Contract", {
   collection_grace(frm) {
     renderDailyChecklist(frm);
   },
+  contract_location(frm) { renderDailyChecklist(frm); },
   items_add(frm) { renderDailyChecklist(frm); },
   items_remove(frm) { renderDailyChecklist(frm); },
   specifications_add(frm) { renderDailyChecklist(frm); },
@@ -656,11 +679,37 @@ frappe.ui.form.on("PZ Contract Item", {
     const state = contractChildLookupState(row);
     const requestId = ++state.itemRequest;
     const itemCode = row.item_code;
-    if (itemCode) frappe.db.get_value("Item", itemCode, ["item_name", "description", "stock_uom"], (r) => {
+    const doc = frm.doc;
+    // Product changes cannot carry packaging from the previous product. Clear
+    // immediately, even if the new lookup fails or the Item is removed.
+    const current = () => frm.doc === doc && isCurrentContractItemRow(frm, cdt, cdn, row)
+      && state.itemRequest === requestId && row.item_code === itemCode;
+    const previousItem = state.itemCode;
+    state.itemCode = itemCode || null;
+    if (previousItem !== itemCode) frappe.model.set_value(cdt, cdn, "packaging", null);
+    if (!itemCode) {
+      frappe.model.set_value(cdt, cdn, { item_name: null, description: null, uom: null });
+      renderDailyChecklist(frm);
+      return;
+    }
+    const packagingBeforeLookup = row.packaging;
+    const fillPackaging = previousItem !== itemCode || (usesUsdEntry(frm) && !row.packaging);
+    frappe.call({ method: "pz_sales_contract.entry_policy.get_item_details", args: { item_code: itemCode }, callback(response) {
+      const r = response.message;
       if (!isCurrentContractItemRow(frm, cdt, cdn, row)
-        || state.itemRequest !== requestId || row.item_code !== itemCode || !r) return;
-      frappe.model.set_value(cdt, cdn, { item_name: r.item_name, description: r.description, uom: r.stock_uom });
-    });
+        || !current() || !r) return;
+      const values = { item_name: r.item_name, description: r.description, uom: r.stock_uom };
+      if (fillPackaging && row.packaging === packagingBeforeLookup && r.packaging) values.packaging = r.packaging;
+      // Separate writes keep a navigation/item-change event from applying the
+      // rest of an obsolete response to a reused child-row name.
+      (async () => {
+        for (const [fieldname, value] of Object.entries(values)) {
+          if (!current()) return;
+          if (fieldname === "packaging" && row.packaging !== packagingBeforeLookup) continue;
+          await frappe.model.set_value(cdt, cdn, fieldname, value);
+        }
+      })();
+    } });
     renderDailyChecklist(frm);
   },
   grade_master(frm, cdt, cdn) {

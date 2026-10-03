@@ -275,7 +275,7 @@ class TestContractFormDefinition(unittest.TestCase):
         self.assertIn('for fieldname in CURRENCY_DEPENDENT_DEFAULT_FIELDS - initially_blank:', self.controller)
         self.assertIn('if not currency_matches or explicit_dependency_conflict:', self.controller)
         currency_field = next(field for field in self.contract["fields"] if field["fieldname"] == "currency")
-        self.assertIn("never replaces a nonblank currency", currency_field["description"])
+        self.assertIn("New contracts use USD", currency_field["description"])
         self.assertLess(
             self.controller.index('self._apply_company_defaults()'),
             self.controller.index("frappe.db.sql('SELECT name FROM `tabCustomer`"),
@@ -290,7 +290,7 @@ class TestContractFormDefinition(unittest.TestCase):
         self.assertIn('frappe.db.get_value("PZ Contract Defaults", { company }, "name").then((response) => {', self.javascript)
         self.assertIn('if (name) frappe.set_route("Form", "PZ Contract Defaults", name);', self.javascript)
         self.assertIn('else frappe.new_doc("PZ Contract Defaults", { company });', self.javascript)
-        self.assertIn('const clear = Object.fromEntries([...companyDefaultFields, "seller_address_display"].map((fieldname) => [fieldname, null]));', self.javascript)
+        self.assertIn('.filter((fieldname) => !(usesUsdEntry(frm) && fieldname === "currency"))', self.javascript)
         self.assertIn('const currencyCompatible = !isMissingValue("currency", configured.currency)', self.javascript)
         self.assertIn('function isUntouchedFrameworkCurrencyDefault(frm, fieldname)', self.javascript)
         self.assertIn('field.df.__default_value !== undefined', self.javascript)
