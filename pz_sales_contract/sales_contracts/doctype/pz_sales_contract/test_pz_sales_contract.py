@@ -19,6 +19,7 @@ from pz_sales_contract.sales_contracts.doctype.pz_contract_defaults.pz_contract_
 )
 from pz_sales_contract.sales_contracts.doctype.pz_sales_contract.pz_sales_contract import (
     HISTORICAL_CONTRACT_FIELDS,
+    ITEM_ONLY_DRAFT_SO_SCOPE,
     grade_snapshot,
 )
 
@@ -171,6 +172,31 @@ class TestPZSalesContract(IntegrationTestCase):
             property='Penetration', unit='dmm', test_method='Synthetic method', requirement='60-70 (demo only)')])
         with self.assertRaises(frappe.ValidationError):
             doc.insert()
+
+    def test_legacy_contracts_require_specifications_while_v2_omits_them(self):
+        specification = dict(item_code='PZ Synthetic Bitumen', property='Penetration', unit='dmm',
+            test_method='Synthetic method', requirement='60-70 (demo only)')
+        legacy = contract(insert=False, terms_version=None)
+        with self.assertRaises(frappe.ValidationError):
+            legacy.validate_specifications()
+        legacy.append('specifications', specification)
+        legacy.validate_specifications()
+
+        simplified = contract(insert=False, terms_version=CURRENT_TERMS_VERSION)
+        simplified.validate_specifications()
+        simplified.append('specifications', specification)
+        with self.assertRaises(frappe.ValidationError):
+            simplified.validate_specifications()
+
+    def test_legacy_schedule_cannot_bypass_missing_inputs_but_v2_has_no_schedule(self):
+        legacy = contract(insert=False, terms_version=None, contract_scope_version=None)
+        legacy.timezone = None
+        with self.assertRaises(frappe.ValidationError):
+            legacy.validate_schedule()
+
+        simplified = contract(insert=False, contract_scope_version=ITEM_ONLY_DRAFT_SO_SCOPE)
+        simplified.timezone = None
+        simplified.validate_schedule()
 
     def test_missing_or_disabled_grade_master_blocks_a_new_line(self):
         missing = contract(insert=False)

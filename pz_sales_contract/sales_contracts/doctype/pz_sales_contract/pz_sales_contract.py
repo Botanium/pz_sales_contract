@@ -267,8 +267,7 @@ class PZSalesContract(Document):
             self.tax_total = 0
         elif not self.delivery_date:
             frappe.throw('Legacy contracts require their saved planned delivery date')
-        if self.get('terms_version') == CURRENT_TERMS_VERSION and self.specifications:
-            frappe.throw('Product specification rows are not part of the simplified contract version')
+        self.validate_specifications()
         self.validate_links_and_snapshots(old)
         self.validate_schedule()
         self.validate_incoterm(old)
@@ -355,6 +354,13 @@ class PZSalesContract(Document):
             if frappe.db.get_value('Account', tax.account_head, 'company') != self.company:
                 frappe.throw('Tax / charge accounts must belong to the seller company')
 
+    def validate_specifications(self):
+        if self.get('terms_version') == CURRENT_TERMS_VERSION:
+            if self.specifications:
+                frappe.throw('Product specification rows are not part of the simplified contract version')
+        elif not self.specifications:
+            frappe.throw('Legacy contracts require agreed product specifications for Appendix A')
+
     def validate_grade_masters(self, old=None, require_active=False):
         historical = old
         if not historical and self.amended_from:
@@ -423,14 +429,16 @@ class PZSalesContract(Document):
         incoterm.check_permission('read')
 
     def validate_schedule(self):
+        if self.uses_item_only_draft_order():
+            # V2 does not carry the historical Commercial Schedule.
+            return
         required_inputs = (
             'timezone', 'business_days', 'opens_at', 'closes_at', 'holiday_list',
             'collection_grace', 'grace_unit',
         )
-        if any(self.get(fieldname) in (None, '') for fieldname in required_inputs):
-            # These fields remain as historical contract data, but the Desk form
-            # no longer requires a new schedule or an approval/ready record.
-            return
+        missing = [fieldname for fieldname in required_inputs if self.get(fieldname) in (None, '')]
+        if missing:
+            frappe.throw('Legacy contracts require a complete Commercial Schedule')
         old = self.get_doc_before_save()
         if old and old.docstatus == 1 and old.holiday_calendar_snapshot:
             self.holiday_calendar_snapshot = old.holiday_calendar_snapshot
