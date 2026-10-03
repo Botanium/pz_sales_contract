@@ -250,6 +250,12 @@ class PZSalesContract(Document):
         self.validate_incoterm(old)
         order = self.build_order()
         order.set_missing_values()
+        if self.uses_item_only_draft_order():
+            # A customer or company default tax template must not silently
+            # affect the contract amount. Taxes are chosen explicitly on the
+            # linked Sales Order after the contract is submitted.
+            order.taxes_and_charges = None
+            order.set('taxes', [])
         order.calculate_taxes_and_totals()
         order.set_total_in_words()
         if order.grand_total <= 0 or self.discount_amount < 0 or self.discount_amount > order.total:
@@ -474,6 +480,7 @@ class PZSalesContract(Document):
             # native bypass back off. The order remains Draft and a later save
             # or submit still requires a real user-entered delivery date.
             order.skip_delivery_note = 1
+            order.flags.pz_contract_item_only_draft = True
         order.insert()
         if self.uses_item_only_draft_order():
             order.db_set('skip_delivery_note', 0, update_modified=False)
@@ -556,3 +563,12 @@ def validate_item_only_sales_order_before_submit(doc, method=None):
     doc.calculate_taxes_and_totals()
     if abs(Decimal(str(doc.net_total or 0)) - Decimal(str(contract.grand_total or 0))) > Decimal('0.000001'):
         frappe.throw('Sales Order discounted item total must match the linked contract; review item discounts')
+
+
+def clear_default_taxes_on_initial_item_only_sales_order(doc, method=None):
+    """Prevent native party defaults from silently adding charges at creation."""
+    if not getattr(doc.flags, 'pz_contract_item_only_draft', False):
+        return
+    doc.taxes_and_charges = None
+    doc.set('taxes', [])
+    doc.calculate_taxes_and_totals()

@@ -115,7 +115,7 @@ class TestContractFormDefinition(unittest.TestCase):
         self.assertIn("_legacy_terms_snapshot()", CONTRACT_TERMS_PY.read_text())
         self.assertIn("clauses_for_contract(doc)", (ROOT / "pz_sales_contract/printing.py").read_text())
         review_copy = (ROOT / "docs/contract-print-copy-review.md").read_text()
-        self.assertIn("This copy is not active in the print template", review_copy)
+        self.assertIn("not active as a replacement print layout", review_copy)
         self.assertIn("Confirmed workflow lines — legal review remains open", review_copy)
 
     def test_primary_fields_stay_discoverable_and_advanced_sections_collapse(self):
@@ -140,6 +140,7 @@ class TestContractFormDefinition(unittest.TestCase):
             self.assertTrue(fields[fieldname].get("read_only"))
         self.assertIn("ITEM_ONLY_DRAFT_SO_SCOPE", self.controller)
         self.assertIn("validate_item_only_sales_order_before_submit", (ROOT / "pz_sales_contract/hooks.py").read_text())
+        self.assertIn("clear_default_taxes_on_initial_item_only_sales_order", (ROOT / "pz_sales_contract/hooks.py").read_text())
         self.assertIn("order.skip_delivery_note = 1", self.controller)
         self.assertIn("order.db_set('skip_delivery_note', 0", self.controller)
         self.assertIn("if order.docstatus == 0", self.controller)
@@ -223,13 +224,11 @@ class TestContractFormDefinition(unittest.TestCase):
         self.assertIn('for fieldname, value in initially_blank.items():', set_defaults.group(1))
         self.assertIn('self.set(fieldname, value)', set_defaults.group(1))
         self.assertIn('initially_blank_currency_dependent.add(fieldname)', set_defaults.group(1))
-        self.assertIn("self.get('collection_grace') in (None, '')", set_defaults.group(1))
+        self.assertIn('initially_blank_historical = {', set_defaults.group(1))
         self.assertLess(
-            set_defaults.group(1).index("self.get('collection_grace') in (None, '')"),
+            set_defaults.group(1).index('initially_blank_historical = {'),
             set_defaults.group(1).index('super()._set_defaults()'),
         )
-        self.assertIn("fieldname == 'collection_grace' and self.get(fieldname) == 0", self.controller)
-        self.assertIn("getattr(self, '_pz_initially_blank_collection_grace', False)", self.controller)
         self.assertLess(
             set_defaults.group(1).index('initially_blank_currency_dependent.add(fieldname)'),
             set_defaults.group(1).index('super()._set_defaults()'),

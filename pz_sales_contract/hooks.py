@@ -10,6 +10,7 @@ before_request = ["pz_sales_contract.printing.guard_renderer"]
 doc_events = {
     "Print Format": {"validate": "pz_sales_contract.printing.validate_format"},
     "Sales Order": {
+        "validate": "pz_sales_contract.sales_contracts.doctype.pz_sales_contract.pz_sales_contract.clear_default_taxes_on_initial_item_only_sales_order",
         "before_submit": "pz_sales_contract.sales_contracts.doctype.pz_sales_contract.pz_sales_contract.validate_item_only_sales_order_before_submit"
     },
 }
