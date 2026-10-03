@@ -95,6 +95,11 @@ class PZSalesContract(Document):
             original.check_permission('amend')
             if original.docstatus != 2 or original.customer != self.customer or original.company != self.company:
                 frappe.throw('Amendments require a cancelled contract with the same customer and company')
+            # Hidden schedule fields are retained for an amendment, even if
+            # Frappe's copy helper omitted them from the amendment document.
+            for fieldname in HISTORICAL_CONTRACT_FIELDS:
+                if self.get(fieldname) in (None, '') and original.get(fieldname) not in (None, ''):
+                    self.set(fieldname, original.get(fieldname))
             self.first_family = original.first_family
             # Amendments retain the source contract's delivery/tax lifecycle.
             self.contract_scope_version = original.get('contract_scope_version')
