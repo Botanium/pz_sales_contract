@@ -229,13 +229,15 @@
     {
       "fieldname": "conversion_rate",
       "label": "Exchange rate to company currency",
-      "fieldtype": "Float"
+      "fieldtype": "Float",
+      "hidden": 1
     },
     {
       "fieldname": "selling_price_list",
       "label": "Selling price list",
       "fieldtype": "Link",
-      "options": "Price List"
+      "options": "Price List",
+      "hidden": 1
     },
     {
       "fieldname": "items",

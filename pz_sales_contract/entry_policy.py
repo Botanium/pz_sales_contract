@@ -36,13 +36,13 @@ def uses_entry_policy(doc):
 
 
 def apply_item_packaging(item, previous=None):
-    if previous and previous.item_code == item.item_code and previous.packaging == item.packaging:
+    if previous and previous.item_code == item.item_code:
+        # The stored value is a historical snapshot for an unchanged Item.
+        item.packaging = previous.packaging
         return
-    packaging = ITEM_PACKAGING.get(item.item_code)
-    if packaging and item.packaging and item.packaging != packaging:
-        frappe.throw(f'Packaging for {item.item_code} must be {packaging}')
-    if packaging:
-        item.packaging = packaging
+    # New and changed Items always use the verified Item ID mapping. Unknown
+    # Items stay blank; a stale/forged client value is never printed as fact.
+    item.packaging = ITEM_PACKAGING.get(item.item_code)
 
 
 def usd_conversion_rate(company_currency, transaction_date):

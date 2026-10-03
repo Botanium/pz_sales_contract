@@ -57,10 +57,11 @@
     },
     {
       "fieldname": "packaging",
-      "label": "Packaging",
+      "label": "Derived packaging snapshot",
       "fieldtype": "Data",
-      "reqd": 1,
-      "in_list_view": 1
+      "hidden": 1,
+      "read_only": 1,
+      "description": "Derived server-side from verified Item naming and retained for historical contract prints."
     },
     {
       "fieldname": "qty",

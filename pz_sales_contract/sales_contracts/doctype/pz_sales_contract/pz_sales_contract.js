@@ -259,7 +259,7 @@ function reconcileCopiedCompanyDefaults(frm) {
 }
 
 function missingItemFields(row, historicGradeAllowed) {
-  const required = ["item_code", "packaging", "qty", "uom", "rate"];
+  const required = ["item_code", "qty", "uom", "rate"];
   if (!row.grade_master && !(historicGradeAllowed && row.grade)) required.push("grade_master");
   return required.filter((fieldname) => {
     if (isMissingValue(fieldname, row[fieldname])) return true;
@@ -736,7 +736,6 @@ frappe.ui.form.on("PZ Contract Item", {
       frappe.model.set_value(cdt, cdn, "grade", gradeMaster);
     });
   },
-  packaging(frm) { renderDailyChecklist(frm); },
   qty(frm) { renderDailyChecklist(frm); },
   uom(frm) { renderDailyChecklist(frm); },
   rate(frm) { renderDailyChecklist(frm); },

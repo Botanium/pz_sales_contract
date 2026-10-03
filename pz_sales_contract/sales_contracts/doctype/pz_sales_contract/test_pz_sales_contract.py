@@ -395,22 +395,46 @@ class TestPZSalesContract(IntegrationTestCase):
         with self.assertRaisesRegex(frappe.ValidationError, 'enabled Incoterm location'):
             contract(contract_location=location.name)
 
-    def test_packaging_is_backfilled_from_an_exact_item_mapping_and_mismatch_is_rejected(self):
-        if not frappe.db.exists('Item', 'Bitumen - Bulk'):
-            item = frappe.copy_doc(frappe.get_doc('Item', 'PZ Synthetic Bitumen'))
-            item.item_code = 'Bitumen - Bulk'
-            item.item_name = 'Bitumen - Bulk'
-            item.insert()
+    def test_packaging_is_derived_after_item_change_and_printed_from_saved_value(self):
+        for item_code in ('Bitumen - Bulk', 'Bitumen - Drum'):
+            if not frappe.db.exists('Item', item_code):
+                item = frappe.copy_doc(frappe.get_doc('Item', 'PZ Synthetic Bitumen'))
+                item.item_code = item_code
+                item.item_name = item_code
+                item.insert()
+
         doc = contract(insert=False)
         doc.items[0].item_code = 'Bitumen - Bulk'
-        doc.items[0].packaging = None
+        doc.items[0].packaging = 'Untrusted input'
         doc.insert()
         self.assertEqual(doc.items[0].packaging, 'Bulk')
-        invalid = contract(insert=False)
-        invalid.items[0].item_code = 'Bitumen - Bulk'
-        invalid.items[0].packaging = 'Drum'
-        with self.assertRaisesRegex(frappe.ValidationError, 'must be Bulk'):
-            invalid.insert()
+
+        doc.items[0].item_code = 'Bitumen - Drum'
+        doc.items[0].packaging = 'Bulk'
+        doc.save()
+        doc.reload()
+        self.assertEqual(doc.items[0].packaging, 'Drum')
+
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(frappe.get_print(doc.doctype, doc.name, print_format='Standard'), 'html.parser')
+        product_cell = soup.select('.contract section')[0].select('table')[1].select('tbody tr')[0].select('td')[1]
+        product_text = product_cell.get_text(' ', strip=True)
+        self.assertIn('Bitumen - Drum', product_text)
+        self.assertIn('· Drum', product_text)
+
+    def test_unknown_item_packaging_is_blank_and_not_claimed_in_print(self):
+        doc = contract(insert=False)
+        doc.items[0].packaging = 'Synthetic drums'
+        doc.insert()
+        self.assertIsNone(doc.items[0].packaging)
+
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(frappe.get_print(doc.doctype, doc.name, print_format='Standard'), 'html.parser')
+        product_cell = soup.select('.contract section')[0].select('table')[1].select('tbody tr')[0].select('td')[1]
+        product_text = product_cell.get_text(' ', strip=True)
+        self.assertIn('PZ Synthetic Bitumen', product_text)
+        self.assertNotIn('·', product_text)
+        self.assertNotIn('None', product_text)
 
     def test_contract_location_create_permission_is_limited_to_managers(self):
         user = 'pz-location-reader@example.invalid'

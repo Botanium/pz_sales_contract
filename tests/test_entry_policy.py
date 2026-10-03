@@ -103,21 +103,31 @@ class TestEntryPolicy(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.policy.apply_usd_policy(doc, old)
 
-    def test_explicit_packaging_mapping_and_unknown_items(self):
+    def test_packaging_is_derived_from_verified_items_and_unknown_items_stay_blank(self):
         for name, expected in [('Bitumen - Bulk', 'Bulk'), ('Bitumen - Drum', 'Drum'),
-                ('Bitumen - Jumbo', 'Jumbo')]:
+                ('Bitumen - Jumbo', 'Jumbo'), ('Bitumen VG30 Jumbo Bag', 'Jumbo Bag')]:
             row = Doc(item_code=name, packaging=None)
             self.policy.apply_item_packaging(row)
             self.assertEqual(row.packaging, expected)
             row.packaging = 'Wrong'
-            with self.assertRaises(ValueError):
-                self.policy.apply_item_packaging(row)
+            self.policy.apply_item_packaging(row)
+            self.assertEqual(row.packaging, expected)
         row = Doc(item_code='Unverified Bulk Service', packaging=None)
         self.policy.apply_item_packaging(row)
         self.assertIsNone(row.packaging)
         row.packaging = 'Explicit packaging'
         self.policy.apply_item_packaging(row)
-        self.assertEqual(row.packaging, 'Explicit packaging')
+        self.assertIsNone(row.packaging)
+
+    def test_changed_item_replaces_old_packaging_with_verified_mapping(self):
+        old = Doc(item_code='Bitumen - Bulk', packaging='Bulk')
+        row = Doc(item_code='Bitumen - Drum', packaging='Bulk')
+        self.policy.apply_item_packaging(row, old)
+        self.assertEqual(row.packaging, 'Drum')
+
+        unknown = Doc(item_code='Unverified Bulk Service', packaging='Drum')
+        self.policy.apply_item_packaging(unknown, old)
+        self.assertIsNone(unknown.packaging)
 
     def test_historical_packaging_snapshot_is_preserved(self):
         old = Doc(item_code='Bitumen - Bulk', packaging='Previously agreed packaging')
