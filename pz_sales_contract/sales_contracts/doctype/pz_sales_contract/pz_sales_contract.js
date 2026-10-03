@@ -1,3 +1,20 @@
+const defaultContractIncoterms = ["EXW", "FOB", "CIF"];
+const contractChildLookupStates = new WeakMap();
+
+function contractChildLookupState(row) {
+  let state = contractChildLookupStates.get(row);
+  if (!state) {
+    state = { itemRequest: 0, gradeRequest: 0, gradeMaster: null };
+    contractChildLookupStates.set(row, state);
+  }
+  return state;
+}
+
+function isCurrentContractItemRow(frm, cdt, cdn, row) {
+  return Boolean(locals[cdt] && locals[cdt][cdn] === row
+    && (frm.doc.items || []).some((candidate) => candidate.name === cdn));
+}
+
 const companyDefaultFields = [
   "seller_address",
   "seller_signatory",
@@ -5,26 +22,6 @@ const companyDefaultFields = [
   "currency",
   "conversion_rate",
   "selling_price_list",
-  "delivery_arrangement",
-  "transport_responsibility",
-  "insurance_responsibility",
-  "measurement_basis",
-  "timezone",
-  "business_days",
-  "opens_at",
-  "closes_at",
-  "holiday_list",
-  "notice_channel",
-  "collection_grace",
-  "grace_unit",
-  "collection_arrangement",
-  "delay_charges",
-  "penalty_basis_cap",
-  "cure_period",
-  "latent_claim_period",
-  "force_majeure_threshold",
-  "governing_law",
-  "courts",
   "bank_receiving_account",
   "cash_receiving_account",
   "beneficiary",
@@ -74,9 +71,9 @@ function ensureCompanyDefaultsDocument(frm) {
       _pzCompanyDefaultObservedValues: Object.fromEntries(
         companyDefaultFields.map((fieldname) => [fieldname, frm.doc[fieldname]])
       ),
+      _pzContractIncoterms: [...defaultContractIncoterms],
       // Native Duplicate and Quick Entry mark their existing values as prefilled.
       _pzCompanyDefaultsPrefilled: frm.doc.__run_link_triggers === false,
-      _pzCollectionGraceTouchedCompany: frm.doc.__run_link_triggers === false ? frm.doc.company : null,
       _pzLastSelectedCompany: frm.doc.company || null,
     };
     states.set(frm.doc, state);
@@ -159,37 +156,6 @@ const requiredChecklistGroups = [
     ],
   },
   {
-    label: "Agreed specifications",
-    firstField: "specifications",
-    table: "specifications",
-  },
-  {
-    label: "Delivery and legal schedule",
-    firstField: "delivery_arrangement",
-    fields: [
-      "delivery_arrangement",
-      "transport_responsibility",
-      "insurance_responsibility",
-      "measurement_basis",
-      "timezone",
-      "business_days",
-      "opens_at",
-      "closes_at",
-      "holiday_list",
-      "notice_channel",
-      "collection_grace",
-      "grace_unit",
-      "collection_arrangement",
-      "delay_charges",
-      "penalty_basis_cap",
-      "cure_period",
-      "latent_claim_period",
-      "force_majeure_threshold",
-      "governing_law",
-      "courts",
-    ],
-  },
-  {
     label: "Verified payment instructions",
     firstField: "bank_receiving_account",
     fields: ["bank_receiving_account", "beneficiary", "bank_branch", "account_iban", "swift_reference"],
@@ -199,7 +165,6 @@ const requiredChecklistGroups = [
 function isMissingValue(fieldname, value) {
   if (value === undefined || value === null || value === "") return true;
   if (fieldname === "conversion_rate") return Number(value) <= 0;
-  if (fieldname === "collection_grace") return Number(value) < 0;
   return false;
 }
 
@@ -289,34 +254,23 @@ function reconcileCopiedCompanyDefaults(frm) {
   }
 }
 
-function missingItemFields(row) {
-  const required = ["item_code", "grade", "packaging", "qty", "uom", "rate", "specification_reference"];
+function missingItemFields(row, historicGradeAllowed) {
+  const required = ["item_code", "packaging", "qty", "uom", "rate"];
+  if (!row.grade_master && !(historicGradeAllowed && row.grade)) required.push("grade_master");
   return required.filter((fieldname) => {
     if (isMissingValue(fieldname, row[fieldname])) return true;
     return ["qty", "rate"].includes(fieldname) && Number(row[fieldname]) <= 0;
   }).length;
 }
 
-function missingSpecificationFields(rows, items) {
-  if (!rows.length) return 1;
-  const required = ["item_code", "property", "test_method", "requirement"];
-  let missing = rows.reduce(
-    (count, row) => count + required.filter((fieldname) => isMissingValue(fieldname, row[fieldname])).length,
-    0
-  );
-  const specifiedItems = new Set(rows.map((row) => row.item_code).filter(Boolean));
-  const soldItems = new Set((items || []).map((row) => row.item_code).filter(Boolean));
-  for (const itemCode of soldItems) if (!specifiedItems.has(itemCode)) missing++;
-  return missing;
-}
-
 function checklistStatus(doc, group) {
   let missing = (group.fields || []).filter((fieldname) => isMissingValue(fieldname, doc[fieldname])).length;
   if (group.table === "items") {
     const rows = doc.items || [];
-    missing += rows.length ? rows.reduce((count, row) => count + missingItemFields(row), 0) : 1;
-  } else if (group.table === "specifications") {
-    missing += missingSpecificationFields(doc.specifications || [], doc.items || []);
+    const historicGradeAllowed = !doc.__islocal || Boolean(doc.amended_from);
+    missing += rows.length ? rows.reduce(
+      (count, row) => count + missingItemFields(row, historicGradeAllowed), 0
+    ) : 1;
   }
   return {
     missing,
@@ -352,7 +306,7 @@ function renderDailyChecklist(frm) {
     const color = row.missing ? "text-warning" : "text-success";
     return `<li style="margin:3px 0"><button type="button" class="btn btn-default btn-xs pz-checklist-target" data-fieldname="${escapeHTML(row.firstField)}" style="width:100%;text-align:left"><span>${escapeHTML(row.label)}</span><span class="pull-right ${color}">${escapeHTML(status)}</span></button></li>`;
   }).join("");
-  const html = `<div class="alert alert-info pz-contract-checklist" role="status" aria-live="polite"><p style="margin-bottom:6px"><strong>Daily sales flow</strong> <span class="text-muted">${escapeHTML(summary)}</span></p><p style="margin-bottom:8px">Start with the customer, dates, products and price, then choose the Incoterm and named place. Select a checklist item to jump to its details. Advanced terms remain required unless configured defaults have filled them.</p><ul class="list-unstyled" style="margin:0">${checklist}</ul><p class="text-muted" style="margin:8px 0 0">Company defaults are copied into blank fields on new contracts only; confirm every value for this deal. Changing Company clears its seller, account and term values. Existing contracts keep their saved terms.</p></div>`;
+  const html = `<div class="alert alert-info pz-contract-checklist" role="status" aria-live="polite"><p style="margin-bottom:6px"><strong>Daily sales flow</strong> <span class="text-muted">${escapeHTML(summary)}</span></p><p style="margin-bottom:8px">Start with the customer, dates, products and price, then choose the Incoterm and named place. Select a checklist item to jump to its details.</p><ul class="list-unstyled" style="margin:0">${checklist}</ul><p class="text-muted" style="margin:8px 0 0">Company defaults are copied into blank fields on new contracts only; confirm every value for this deal. Changing Company clears its seller and account values. Existing contracts keep their saved terms.</p></div>`;
 
   field.$wrapper.html(html);
   field.$wrapper.off("click.pzContractChecklist").on("click.pzContractChecklist", ".pz-checklist-target", (event) => {
@@ -401,6 +355,10 @@ function loadCompanyDefaults(frm, expectedCompany, requestId) {
           if (!isCurrent()) return;
           frm._pzCompanyDefaultsLoadedFor = company;
           const configured = response.message || {};
+          frm._pzContractIncoterms = [...new Set([
+            ...defaultContractIncoterms,
+            ...(Array.isArray(configured.allowed_incoterms) ? configured.allowed_incoterms : []),
+          ])];
           const values = {};
           const currencyCompatible = !isMissingValue("currency", configured.currency)
             && (isMissingValue("currency", frm.doc.currency) || frm.doc.currency === configured.currency);
@@ -434,11 +392,7 @@ function loadCompanyDefaults(frm, expectedCompany, requestId) {
               values[fieldname] = configured[fieldname];
               continue;
             }
-            const initialZeroGrace = fieldname === "collection_grace"
-              && Number(frm.doc[fieldname]) === 0
-              && frm._pzCollectionGraceTouchedCompany !== company;
-            if ((isMissingValue(fieldname, frm.doc[fieldname])
-              || (fieldname === "collection_grace" && initialZeroGrace))
+            if (isMissingValue(fieldname, frm.doc[fieldname])
               && !isMissingValue(fieldname, configured[fieldname])) {
               values[fieldname] = configured[fieldname];
             }
@@ -469,6 +423,24 @@ function loadCompanyDefaults(frm, expectedCompany, requestId) {
   }));
 }
 
+function loadContractIncoterms(frm) {
+  const company = frm.doc.company;
+  if (!company || (frm.is_new() && !frm.doc.amended_from)) return;
+  const doc = frm.doc;
+  const requestId = (frm._pzContractIncotermsRequestId || 0) + 1;
+  frm._pzContractIncotermsRequestId = requestId;
+  frappe.call({
+    method: "pz_sales_contract.sales_contracts.doctype.pz_contract_defaults.pz_contract_defaults.get_allowed_incoterms",
+    args: { company },
+    callback(response) {
+      if (frm.doc !== doc || frm.doc.company !== company
+        || frm._pzContractIncotermsRequestId !== requestId) return;
+      const configured = Array.isArray(response.message) ? response.message : [];
+      frm._pzContractIncoterms = [...new Set([...defaultContractIncoterms, ...configured])];
+    },
+  });
+}
+
 function clearCompanySpecificValues(frm) {
   ensureCompanyDefaultsDocument(frm);
   if (!frm.is_new() || frm.doc.amended_from) return;
@@ -487,11 +459,11 @@ function clearCompanySpecificValues(frm) {
   frm._pzCompanyDefaultsConfiguredBank = null;
   frm._pzCompanyDefaultsHasCurrencyDependentDefaults = false;
   frm._pzCompanyDefaultsAppliedValues = {};
+  frm._pzContractIncoterms = [...defaultContractIncoterms];
   frm._pzCompanyDefaultTouchedFields = new Set();
   frm._pzCompanyDefaultEditRevisions = {};
   frm._pzCompanyDefaultWrites = {};
   frm._pzCompanyDefaultObservedValues = { ...frm._pzCompanyDefaultsPendingClear.before };
-  frm._pzCollectionGraceTouchedCompany = null;
   return resumeCompanySpecificClear(frm);
 }
 
@@ -549,7 +521,12 @@ frappe.ui.form.on("PZ Sales Contract", {
     frm.set_query("customer_address", () => ({ query: "frappe.contacts.doctype.address.address.address_query", filters: { link_doctype: "Customer", link_name: frm.doc.customer } }));
     frm.set_query("seller_address", () => ({ query: "frappe.contacts.doctype.address.address.address_query", filters: { link_doctype: "Company", link_name: frm.doc.company } }));
     frm.set_query("contact_person", () => ({ query: "frappe.contacts.doctype.contact.contact.contact_query", filters: { link_doctype: "Customer", link_name: frm.doc.customer } }));
+    frm.set_query("incoterm", () => ({ filters: { name: ["in", [...new Set([
+      ...(frm._pzContractIncoterms || defaultContractIncoterms),
+      ...(frm.doc.incoterm ? [frm.doc.incoterm] : []),
+    ])]] } }));
     frm.set_query("item_code", "items", () => ({ filters: { disabled: 0, is_sales_item: 1 } }));
+    frm.set_query("grade_master", "items", () => ({ filters: { disabled: 0 } }));
     frm.set_query("bank_receiving_account", () => ({ filters: { company: frm.doc.company, account_type: "Bank", is_group: 0, disabled: 0 } }));
     frm.set_query("cash_receiving_account", () => ({ filters: { company: frm.doc.company, account_type: "Cash", is_group: 0, disabled: 0 } }));
     frm.set_query("selling_price_list", () => ({ filters: { enabled: 1, selling: 1 } }));
@@ -572,6 +549,9 @@ frappe.ui.form.on("PZ Sales Contract", {
   },
   refresh(frm) {
     ensureCompanyDefaultsDocument(frm);
+    for (const row of frm.doc.items || []) {
+      contractChildLookupState(row).gradeMaster = row.grade_master || null;
+    }
     frm.set_intro("The first contract family saved using this app carries DRAFT until the full 30% advance has qualifying bank reconciliation or agreed cash receipt evidence. Finance can register verified prior contracts through PZ Customer History. ERP submission is separate. Save before printing.");
     renderDailyChecklist(frm);
     const doc = frm.doc;
@@ -581,6 +561,7 @@ frappe.ui.form.on("PZ Sales Contract", {
     }).then(() => {
       if (frm.doc !== doc) return;
       if (frm.is_new() && !frm.doc.amended_from && frm.doc.company) loadCompanyDefaults(frm);
+      else if (frm.doc.company) loadContractIncoterms(frm);
     });
     if (frm.is_new() && !frm.doc.amended_from && frm.doc.company && frappe.user.has_role("System Manager")) {
       frm.add_custom_button("Company Contract Defaults", () => {
@@ -650,10 +631,6 @@ frappe.ui.form.on("PZ Sales Contract", {
     }
   },
   collection_grace(frm) {
-    ensureCompanyDefaultsDocument(frm);
-    if (markCompanyDefaultTouched(frm, "collection_grace") && frm.doc.company) {
-      frm._pzCollectionGraceTouchedCompany = frm.doc.company;
-    }
     renderDailyChecklist(frm);
   },
   items_add(frm) { renderDailyChecklist(frm); },
@@ -665,12 +642,40 @@ frappe.ui.form.on("PZ Sales Contract", {
 frappe.ui.form.on("PZ Contract Item", {
   item_code(frm, cdt, cdn) {
     const row = locals[cdt][cdn];
-    if (row.item_code) frappe.db.get_value("Item", row.item_code, ["item_name", "description", "stock_uom"], (r) => {
+    const state = contractChildLookupState(row);
+    const requestId = ++state.itemRequest;
+    const itemCode = row.item_code;
+    if (itemCode) frappe.db.get_value("Item", itemCode, ["item_name", "description", "stock_uom"], (r) => {
+      if (!isCurrentContractItemRow(frm, cdt, cdn, row)
+        || state.itemRequest !== requestId || row.item_code !== itemCode || !r) return;
       frappe.model.set_value(cdt, cdn, { item_name: r.item_name, description: r.description, uom: r.stock_uom });
     });
     renderDailyChecklist(frm);
   },
-  grade(frm) { renderDailyChecklist(frm); },
+  grade_master(frm, cdt, cdn) {
+    const row = locals[cdt][cdn];
+    const state = contractChildLookupState(row);
+    const previousGradeMaster = state.gradeMaster;
+    const gradeMaster = row.grade_master || null;
+    state.gradeMaster = gradeMaster;
+    const requestId = ++state.gradeRequest;
+    if (!gradeMaster) {
+      if (previousGradeMaster) frappe.model.set_value(cdt, cdn, "grade", null);
+      renderDailyChecklist(frm);
+      return;
+    }
+    frappe.db.get_value("Bitumen Grade", gradeMaster, ["disabled"], (r) => {
+      if (!isCurrentContractItemRow(frm, cdt, cdn, row)
+        || state.gradeRequest !== requestId || row.grade_master !== gradeMaster || !r) return;
+      if (r.disabled) {
+        frappe.show_alert({ message: __("This Bitumen Grade is disabled. Choose an active Grade."), indicator: "orange" });
+        return;
+      }
+      // The canonical Link name is always available; the server snapshots
+      // grade_code when that optional field exists on the master.
+      frappe.model.set_value(cdt, cdn, "grade", gradeMaster);
+    });
+  },
   packaging(frm) { renderDailyChecklist(frm); },
   qty(frm) { renderDailyChecklist(frm); },
   uom(frm) { renderDailyChecklist(frm); },

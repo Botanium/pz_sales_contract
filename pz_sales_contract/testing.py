@@ -6,6 +6,21 @@ from erpnext.accounts.doctype.payment_entry.payment_entry import get_payment_ent
 COMPANY = 'PZ Synthetic QA'
 
 
+def synthetic_bitumen_grade(grade_code='60/70'):
+    if not frappe.db.exists('DocType', 'Bitumen Grade'):
+        frappe.throw('The Bitumen Grade master must be installed for synthetic contract tests')
+    name = frappe.db.get_value('Bitumen Grade', {'grade_code': grade_code, 'disabled': 0}, 'name')
+    if name:
+        return name
+    token = grade_code.replace('/', '-')
+    synthetic_code = f'PZ-SYNTHETIC-{token}'
+    name = frappe.db.get_value('Bitumen Grade', {'grade_code': synthetic_code}, 'name')
+    if name:
+        return name
+    return frappe.get_doc(dict(doctype='Bitumen Grade', grade_code=synthetic_code,
+        grade_name=f'Synthetic {grade_code}', disabled=0, notes='Synthetic test data only')).insert().name
+
+
 def setup_fixtures():
     frappe.set_user('Administrator')
     # Fresh ERPNext sites have no setup-wizard tree roots yet. Create only the
@@ -38,8 +53,12 @@ def setup_fixtures():
             year_start_date=f'{year}-01-01', year_end_date=f'{year}-12-31')).insert()
     if not frappe.db.exists('Price List', 'PZ Synthetic USD'):
         frappe.get_doc(dict(doctype='Price List',price_list_name='PZ Synthetic USD',currency='USD',selling=1,enabled=1)).insert()
-    if not frappe.db.exists('Incoterm', 'EXW'):
-        frappe.get_doc(dict(doctype='Incoterm',incoterm='EXW',title='Ex Works')).insert()
+    for code, title in [
+        ('EXW', 'Ex Works'), ('FOB', 'Free On Board'), ('CIF', 'Cost Insurance and Freight'),
+        ('FCA', 'Free Carrier'),
+    ]:
+        if not frappe.db.exists('Incoterm', code):
+            frappe.get_doc(dict(doctype='Incoterm',incoterm=code,title=title)).insert()
     if not frappe.db.exists('Holiday List','PZ Synthetic Calendar'):
         frappe.get_doc(dict(doctype='Holiday List',holiday_list_name='PZ Synthetic Calendar',
             from_date=f'{year}-01-01',to_date=f'{year+1}-12-31',holidays=[dict(holiday_date=f'{year}-12-25',description='Synthetic closure')])).insert()
@@ -99,7 +118,9 @@ def contract(customer=None, submit=False, insert=True, **values):
         transaction_date=today(),delivery_date=add_days(today(),10),currency='USD',conversion_rate=1,
         selling_price_list='PZ Synthetic USD',customer_address=address.name,contact_person=contact.name,
         seller_address='PZ Synthetic Seller-Billing',seller_signatory='Synthetic Seller',seller_position='Test manager',buyer_position='Test buyer',
-        items=[dict(item_code='PZ Synthetic Bitumen',qty=10,uom='Nos',rate=100,grade='60/70',packaging='Synthetic drums',specification_reference='Synthetic specification QA-001')],
+        items=[dict(item_code='PZ Synthetic Bitumen',qty=10,uom='Nos',rate=100,
+            grade_master=synthetic_bitumen_grade(),grade='PZ-SYNTHETIC-60-70',
+            packaging='Synthetic drums',specification_reference='Synthetic specification QA-001')],
         specifications=[dict(item_code='PZ Synthetic Bitumen',property='Penetration',unit='dmm',test_method='Synthetic method',requirement='60-70 (demo only)')],
         discount_amount=0,incoterm='EXW',named_place='Synthetic pickup point',delivery_arrangement='Synthetic signed loading arrangement',
         transport_responsibility='Buyer (synthetic agreement)',insurance_responsibility='Buyer (synthetic agreement)',

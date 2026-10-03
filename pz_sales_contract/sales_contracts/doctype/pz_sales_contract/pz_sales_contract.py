@@ -6,8 +6,10 @@ from frappe.model.document import Document
 from frappe.utils import getdate
 
 from pz_sales_contract.calendar import add_open_hours, schedule
+from pz_sales_contract.contract_terms import snapshot_for_new_contract
 from pz_sales_contract.sales_contracts.doctype.pz_contract_defaults.pz_contract_defaults import (
     COMPANY_DEFAULT_FIELDS,
+    get_allowed_contract_incoterms,
 )
 
 CURRENCY_DEPENDENT_DEFAULT_FIELDS = frozenset({
@@ -25,6 +27,23 @@ BANK_INSTRUCTION_DEFAULT_FIELDS = frozenset({
     'beneficiary', 'bank_branch', 'account_iban', 'swift_reference',
 })
 
+HISTORICAL_CONTRACT_FIELDS = (
+    'delivery_arrangement', 'transport_responsibility', 'insurance_responsibility',
+    'measurement_basis', 'timezone', 'business_days', 'opens_at', 'closes_at',
+    'holiday_list', 'holiday_calendar_snapshot', 'notice_channel', 'collection_grace',
+    'grace_unit', 'collection_arrangement', 'delay_charges', 'penalty_basis_cap',
+    'cure_period', 'latent_claim_period', 'force_majeure_threshold', 'governing_law',
+    'courts', 'approval_received', 'approval_evidence', 'advance_deadline',
+    'ready_received', 'ready_evidence', 'balance_deadline', 'collection_deadline',
+)
+
+
+def grade_snapshot(grade):
+    """Use the configured Grade code, falling back to its canonical Link name."""
+    meta = frappe.get_meta('Bitumen Grade')
+    code = grade.get('grade_code') if meta.has_field('grade_code') else None
+    return code or grade.name
+
 
 class PZSalesContract(Document):
     def _set_defaults(self):
@@ -33,15 +52,18 @@ class PZSalesContract(Document):
         # the cancelled contract from current user defaults.
         initially_blank = {}
         initially_blank_currency_dependent = set()
-        initially_blank_collection_grace = getattr(self, '_pz_initially_blank_collection_grace', False)
+        initially_blank_historical = set()
+        if self.is_new():
+            initially_blank_historical = {
+                fieldname for fieldname in HISTORICAL_CONTRACT_FIELDS
+                if self.get(fieldname) in (None, '')
+            }
         if self.is_new() and self.amended_from:
             for fieldname in COMPANY_DEFAULT_FIELDS:
                 value = self.get(fieldname)
                 if value in (None, '') or (fieldname == 'conversion_rate' and value == 0):
                     initially_blank[fieldname] = value
         elif self.is_new():
-            if self.get('collection_grace') in (None, ''):
-                initially_blank_collection_grace = True
             for fieldname in CURRENCY_DEPENDENT_DEFAULT_FIELDS:
                 value = self.get(fieldname)
                 if value in (None, '') or (fieldname == 'conversion_rate' and value == 0):
@@ -49,11 +71,12 @@ class PZSalesContract(Document):
 
         super()._set_defaults()
         self._pz_initially_blank_currency_dependent_defaults = initially_blank_currency_dependent
-        self._pz_initially_blank_collection_grace = initially_blank_collection_grace
 
         if self.amended_from:
             for fieldname, value in initially_blank.items():
                 self.set(fieldname, value)
+        for fieldname in initially_blank_historical:
+            self.set(fieldname, None)
 
     def before_insert(self):
         self._apply_company_defaults()
@@ -67,7 +90,12 @@ class PZSalesContract(Document):
                 frappe.throw('Amendments require a cancelled contract with the same customer and company')
             self.first_family = original.first_family
         else:
+            original = None
             self.first_family = frappe.generate_hash(length=20)
+        # Pin the exact clauses used by this contract. Amendments retain the
+        # source contract's clause version; historical records without a saved
+        # snapshot use the immutable first-version copy when printed.
+        self.terms_snapshot = snapshot_for_new_contract(original)
         # A locking current read is essential here: ordinary exists() can read
         # an earlier REPEATABLE READ snapshot even after waiting for Customer.
         reservation = frappe.db.sql('SELECT name, first_family FROM `tabPZ Contract Registry` WHERE customer=%s FOR UPDATE',self.customer)
@@ -181,9 +209,6 @@ class PZSalesContract(Document):
                     continue
             blank = self.get(fieldname) in (None, '') or (
                 fieldname == 'conversion_rate' and self.get(fieldname) == 0
-            ) or (
-                fieldname == 'collection_grace' and self.get(fieldname) == 0
-                and getattr(self, '_pz_initially_blank_collection_grace', False)
             )
             configured_value = defaults.get(fieldname)
             if fieldname == 'conversion_rate' and configured_value == 0:
@@ -197,11 +222,14 @@ class PZSalesContract(Document):
             for key in ['customer', 'company', 'first_family', 'sales_order', 'amended_from']:
                 if self.get(key) != old.get(key):
                     frappe.throw(f'{key} cannot be changed after creation')
+            if self.terms_snapshot != old.terms_snapshot:
+                frappe.throw('The contract terms snapshot cannot be changed after creation')
         elif self.is_new():
             # Reject forged readonly internal values from REST/import as well as Desk.
             self.sales_order = None
-        self.validate_links_and_snapshots()
+        self.validate_links_and_snapshots(old)
         self.validate_schedule()
+        self.validate_incoterm(old)
         order = self.build_order()
         order.set_missing_values()
         order.calculate_taxes_and_totals()
@@ -225,7 +253,7 @@ class PZSalesContract(Document):
                         'base_tax_amount_after_discount_amount','total','base_total']:
                 row.set(key, calculated.get(key))
 
-    def validate_links_and_snapshots(self):
+    def validate_links_and_snapshots(self, old=None):
         customer = frappe.get_doc('Customer', self.customer)
         customer.check_permission('read')
         if customer.disabled:
@@ -260,6 +288,7 @@ class PZSalesContract(Document):
                     frappe.throw(f'{key} must be an enabled seller {kind} ledger account')
                 if (account.account_currency or currency) != self.currency:
                     frappe.throw('Nominated receiving accounts must use the contract currency')
+        self.validate_grade_masters(old)
         for item in self.items:
             master = frappe.get_doc('Item', item.item_code)
             master.check_permission('read')
@@ -272,15 +301,86 @@ class PZSalesContract(Document):
         for row in self.specifications:
             if row.item_code not in {r.item_code for r in self.items}:
                 frappe.throw('Specifications must refer to a product in this contract')
-        if {r.item_code for r in self.specifications} != {r.item_code for r in self.items}:
-            frappe.throw('Enter agreed specifications for every product')
         for tax in self.taxes:
             if tax.charge_type not in ['Actual', 'On Net Total'] or tax.included_in_print_rate or (tax.rate or 0) < 0 or (tax.tax_amount or 0) < 0:
                 frappe.throw('This version supports additional Actual or On Net Total taxes/charges only')
             if frappe.db.get_value('Account', tax.account_head, 'company') != self.company:
                 frappe.throw('Tax / charge accounts must belong to the seller company')
 
+    def validate_grade_masters(self, old=None, require_active=False):
+        historical = old
+        if not historical and self.amended_from:
+            historical = frappe.get_doc('PZ Sales Contract', self.amended_from)
+            historical.check_permission('read')
+
+        def previous_line(row):
+            if not historical:
+                return None
+            return next((previous for previous in historical.items
+                if previous.name == row.name
+                or (previous.idx == row.idx and previous.item_code == row.item_code)), None)
+
+        grade_doctype_exists = bool(frappe.db.exists('DocType', 'Bitumen Grade'))
+        sales_order_grade_field_exists = frappe.get_meta('Sales Order Item').has_field('custom_bitumen_grade')
+        for row in self.items:
+            previous = previous_line(row)
+            unchanged_snapshot = bool(
+                previous and previous.item_code == row.item_code
+                and previous.grade_master == row.grade_master
+                and previous.grade == row.grade
+            )
+            unchanged_saved_link = bool(old and unchanged_snapshot)
+            if row.grade_master:
+                if not grade_doctype_exists:
+                    if unchanged_saved_link and not require_active:
+                        row.grade_master = None
+                        continue
+                    frappe.throw('The Bitumen Grade master is unavailable; select an installed Grade master before saving new Grade links')
+                if not frappe.db.exists('Bitumen Grade', row.grade_master):
+                    if unchanged_saved_link and not require_active:
+                        row.grade_master = None
+                        continue
+                    frappe.throw(f'Bitumen Grade {row.grade_master} no longer exists; choose an active Grade master')
+                grade = frappe.get_doc('Bitumen Grade', row.grade_master)
+                grade.check_permission('read')
+                if grade.get('disabled'):
+                    if unchanged_saved_link and not require_active:
+                        continue
+                    frappe.throw(f'Bitumen Grade {row.grade_master} is disabled; choose an active Grade master')
+                if not sales_order_grade_field_exists:
+                    frappe.throw('Sales Order Item custom_bitumen_grade is required to map contract line Grades')
+                if not unchanged_snapshot:
+                    row.grade = grade_snapshot(grade)
+                continue
+
+            if require_active and previous and previous.grade_master:
+                frappe.throw('The saved Bitumen Grade link is unavailable; restore an active Grade master before submitting this contract')
+            if not row.grade or not previous or previous.item_code != row.item_code or previous.grade != row.grade:
+                frappe.throw('Choose a Bitumen Grade master for each new contract line; existing free-text Grade snapshots are retained for history')
+
+    def validate_incoterm(self, old=None):
+        if old and old.incoterm == self.incoterm:
+            return
+        allowed = set(get_allowed_contract_incoterms(self.company))
+        if self.amended_from:
+            original = frappe.get_doc('PZ Sales Contract', self.amended_from)
+            original.check_permission('read')
+            if original.incoterm:
+                allowed.add(original.incoterm)
+        if self.incoterm not in allowed:
+            frappe.throw('Choose EXW, FOB, CIF, or an Incoterm enabled for this seller company')
+        incoterm = frappe.get_doc('Incoterm', self.incoterm)
+        incoterm.check_permission('read')
+
     def validate_schedule(self):
+        required_inputs = (
+            'timezone', 'business_days', 'opens_at', 'closes_at', 'holiday_list',
+            'collection_grace', 'grace_unit',
+        )
+        if any(self.get(fieldname) in (None, '') for fieldname in required_inputs):
+            # These fields remain as historical contract data, but the Desk form
+            # no longer requires a new schedule or an approval/ready record.
+            return
         old = self.get_doc_before_save()
         if old and old.docstatus == 1 and old.holiday_calendar_snapshot:
             self.holiday_calendar_snapshot = old.holiday_calendar_snapshot
@@ -325,9 +425,12 @@ class PZSalesContract(Document):
         order.apply_discount_on = 'Net Total'
         order.discount_amount = self.discount_amount
         for row in self.items:
-            order.append('items', dict(item_code=row.item_code, item_name=row.item_name,
+            item = dict(item_code=row.item_code, item_name=row.item_name,
                 description=row.description, qty=row.qty, uom=row.uom, conversion_factor=row.conversion_factor,
-                rate=row.rate, delivery_date=self.delivery_date))
+                rate=row.rate, delivery_date=self.delivery_date)
+            if row.grade_master:
+                item['custom_bitumen_grade'] = row.grade_master
+            order.append('items', item)
         for tax in self.taxes:
             order.append('taxes', {key:tax.get(key) for key in ['charge_type','account_head','description','rate','tax_amount','cost_center']})
         return order
@@ -335,6 +438,7 @@ class PZSalesContract(Document):
     def on_submit(self):
         # Native permission checks remain in force. A Sales User cannot mint submitted
         # contracts/Sales Orders, even by calling REST directly.
+        self.validate_grade_masters(self.get_doc_before_save(), require_active=True)
         order = self.build_order()
         order.insert()
         order.submit()

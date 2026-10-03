@@ -2,14 +2,16 @@
 
 User-authorized scope: implement, test and publish this dedicated app in public Botanium/pz_sales_contract. Production installation/deployment, sending contracts and signing contracts remain excluded.
 
-- Sales team selects ERPNext Customer, Item and linked details; quantity/UOM/grade/packaging/rate/currency/tax/discount/totals and Incoterm plus named place are captured.
-- All 15 full clauses and supplied signature/specification/payment sections preserve the supplied branded five-page master’s commercial meaning. Capture referenced missing Commercial Schedule inputs; invent no legal terms, fees, calendars, jurisdiction or deadlines.
+- Sales team selects ERPNext Customer, Item, a per-line Bitumen Grade master and linked details; quantity/UOM/packaging/rate/currency/tax/discount/totals and Incoterm plus named place are captured. Contract line Grade maps to Sales Order Item `custom_bitumen_grade`; legacy free-text Grade snapshots remain intact for existing contracts.
+- All 15 full clauses and supplied signature/payment sections preserve the supplied branded master’s commercial meaning. New contracts pin their clause list in a hidden terms snapshot; amendments inherit the source snapshot. Pre-snapshot records use the immutable v1 clause file when printed. Product specification rows are optional in the form and Appendix A is omitted when none are recorded. The optional specification-reference value remains stored for history but is hidden from the entry UI and omitted from print. New contract forms omit deal-specific delivery/legal schedule and approval-record fields without copying stored legal schedule defaults into those hidden fields. Existing schedule schema, historical data and supplied clauses remain unchanged; new prints may have unpopulated Commercial Schedule and approval record values. No legal terms, fees, calendars, jurisdiction, deadlines or Incoterm choice are invented.
 - Attractive branded print/PDF with supplied logo, clean pagination, full terms/specifications and signatures.
 - First contract ONLY per customer bears conspicuous DRAFT until the full required 30% advance, not a token partial payment. Separate this business marker from ERP docstatus.
 - Enforce on server and all native app prints using submitted/noncancelled appropriately allocated receipt and clearance/reconciliation evidence. Cash uses native restricted-finance submitted receipt and GL evidence; FX must follow native semantics or explicitly fail closed.
 - Handle cancellations, amendments, concurrency, duplicate allocations and company/currency isolation. Describe second-contract-before-first-advance bypass without adding an unauthorized later-contract restriction.
 - Feature branch and draft PR; preserve unrelated repos/work; public staged diff has no credentials, real customer/payment records, dumps or Library metadata.
 - Native v16 integration in a disposable site with synthetic fixtures; permission, first/returning, draft/cancelled/submitted receipts, insufficient advances, cancellation, arithmetic and print/PDF tests. Verify exact remote commit and CI.
+- Company-specific Incoterm choices always include EXW/FOB/CIF, allow only additional native Incoterm masters configured per seller Company, and do not auto-select a term.
+- Delivery-date/Sales Order lifecycle and tax behavior are open policy decisions for the follow-up form scope; do not implement either by assuming a default.
 
 The readable master SHA and transcription provenance are in master-provenance.md. README records implementation decisions and explicit limitations.
 

@@ -1,21 +1,31 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import get_timedelta, today
 
 from pz_sales_contract.payments import payment_status, get_status
-from pz_sales_contract.testing import setup_fixtures, contract, receipt, refund, reconcile, new_customer, COMPANY
+from pz_sales_contract.contract_terms import clauses_for_contract, snapshot_for_new_contract
+from pz_sales_contract.testing import (
+    setup_fixtures, contract, receipt, refund, reconcile, new_customer,
+    synthetic_bitumen_grade, COMPANY,
+)
 from pz_sales_contract.sales_contracts.doctype.pz_contract_defaults.pz_contract_defaults import (
     COMPANY_DEFAULT_FIELDS,
     get_company_defaults,
+)
+from pz_sales_contract.sales_contracts.doctype.pz_sales_contract.pz_sales_contract import (
+    HISTORICAL_CONTRACT_FIELDS,
+    grade_snapshot,
 )
 
 # Every needed record is created explicitly below. Do not recursively import
 # optional ERPNext fixtures (Payment Gateway belongs to another app in v16).
 IGNORE_TEST_RECORD_DEPENDENCIES = ['Customer','Company','Address','Contact','Currency','Price List',
-    'Incoterm','Holiday List','Sales Order','PZ Sales Contract','Item','UOM','Account','Cost Center','Project',
+    'Incoterm','Bitumen Grade','Holiday List','Sales Order','PZ Sales Contract','Item','UOM','Account','Cost Center','Project',
     'Location','Branch','Department']
 
 
@@ -98,6 +108,89 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertEqual(d.items[0].item_name,'Synthetic Bitumen')
         self.assertIn('Nine Hundred And Ninety',d.in_words)
         self.assertIn('Synthetic customer',d.address_display)
+        self.assertEqual(frappe.db.get_value('Sales Order Item',
+            {'parent': d.sales_order, 'idx': 1}, 'custom_bitumen_grade'), d.items[0].grade_master)
+
+    def test_contract_line_grades_are_independent(self):
+        first_grade = synthetic_bitumen_grade()
+        second_grade = synthetic_bitumen_grade('80/100')
+        allow_multiple_items = frappe.db.get_single_value('Selling Settings', 'allow_multiple_items')
+        frappe.db.set_single_value('Selling Settings', 'allow_multiple_items', 1)
+        try:
+            d = contract(submit=True, items=[
+                dict(item_code='PZ Synthetic Bitumen', qty=1, uom='Nos', rate=10,
+                    grade_master=first_grade, packaging='Synthetic drums'),
+                dict(item_code='PZ Synthetic Bitumen', qty=1, uom='Nos', rate=10,
+                    grade_master=second_grade, packaging='Synthetic drums'),
+            ])
+            grades = frappe.get_all('Sales Order Item', filters={'parent': d.sales_order},
+                fields=['custom_bitumen_grade'], order_by='idx asc')
+            self.assertEqual([row.custom_bitumen_grade for row in grades], [first_grade, second_grade])
+        finally:
+            frappe.db.set_single_value('Selling Settings', 'allow_multiple_items', allow_multiple_items)
+
+    def test_grade_snapshot_falls_back_to_canonical_name_when_code_field_is_absent(self):
+        grade = SimpleNamespace(name='PZ Synthetic Grade Name', get=lambda key: None)
+        no_code_meta = SimpleNamespace(has_field=lambda fieldname: False)
+        with patch.object(frappe, 'get_meta', return_value=no_code_meta):
+            self.assertEqual(grade_snapshot(grade), 'PZ Synthetic Grade Name')
+
+    def test_contract_terms_are_snapshotted_and_legacy_records_use_frozen_v1(self):
+        app_path = Path(__file__).resolve().parents[3]
+        active_snapshot = (app_path / 'terms.json').read_text(encoding='utf-8')
+        frozen_snapshot = (app_path / 'terms_versions' / 'v1.json').read_text(encoding='utf-8')
+        d = contract()
+        self.assertEqual(d.terms_snapshot, active_snapshot)
+        self.assertEqual(clauses_for_contract(d), json.loads(active_snapshot))
+
+        source_with_snapshot = SimpleNamespace(get=lambda key: active_snapshot if key == 'terms_snapshot' else None)
+        self.assertEqual(snapshot_for_new_contract(source_with_snapshot), active_snapshot)
+
+        legacy_source = SimpleNamespace(get=lambda key: None)
+        self.assertEqual(snapshot_for_new_contract(legacy_source), frozen_snapshot)
+        self.assertEqual(clauses_for_contract(legacy_source), json.loads(frozen_snapshot))
+
+        d.terms_snapshot = '[]'
+        with self.assertRaises(frappe.ValidationError):
+            d.save()
+
+    def test_missing_or_disabled_grade_master_blocks_a_new_line(self):
+        missing = contract(insert=False)
+        missing.items[0].grade_master = 'PZ Missing Bitumen Grade'
+        with self.assertRaises(frappe.ValidationError):
+            missing.insert()
+
+        disabled_doc = contract(insert=False)
+        grade_name = disabled_doc.items[0].grade_master
+        original_disabled = frappe.db.get_value('Bitumen Grade', grade_name, 'disabled')
+        frappe.db.set_value('Bitumen Grade', grade_name, 'disabled', 1)
+        try:
+            with self.assertRaises(frappe.ValidationError):
+                disabled_doc.insert()
+        finally:
+            frappe.db.set_value('Bitumen Grade', grade_name, 'disabled', original_disabled or 0)
+
+    def test_unchanged_disabled_grade_remains_savable_as_history(self):
+        d = contract(submit=True)
+        grade_name = d.items[0].grade_master
+        snapshot = d.items[0].grade
+        original_disabled = frappe.db.get_value('Bitumen Grade', grade_name, 'disabled')
+        frappe.db.set_value('Bitumen Grade', grade_name, 'disabled', 1)
+        try:
+            d.reload().save()
+            self.assertEqual(d.items[0].grade_master, grade_name)
+            self.assertEqual(d.items[0].grade, snapshot)
+        finally:
+            frappe.db.set_value('Bitumen Grade', grade_name, 'disabled', original_disabled or 0)
+
+    def test_old_free_text_grade_snapshot_remains_savable(self):
+        d = contract()
+        row_name = d.items[0].name
+        frappe.db.set_value('PZ Contract Item', row_name, 'grade_master', None)
+        frappe.db.set_value('PZ Contract Item', row_name, 'grade', 'Legacy free-text 60/70')
+        d.reload().save()
+        self.assertIsNone(d.items[0].grade_master)
+        self.assertEqual(d.items[0].grade, 'Legacy free-text 60/70')
 
     def test_legacy_explicit_entry_without_company_defaults_still_works(self):
         self.clear_synthetic_company_defaults()
@@ -115,6 +208,14 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertEqual(doc.seller_signatory, 'Synthetic Seller')
         self.assertEqual(doc.bank_receiving_account, 'PZ Synthetic Bank - PZT')
         self.assertEqual(doc.governing_law, 'Synthetic placeholder; not legal advice or real agreement')
+
+    def test_hidden_schedule_defaults_are_not_copied_to_new_contracts(self):
+        self.clear_synthetic_company_defaults()
+        self.synthetic_company_defaults().insert()
+        doc = contract(insert=False, **{fieldname: None for fieldname in HISTORICAL_CONTRACT_FIELDS})
+        doc.insert()
+        for fieldname in HISTORICAL_CONTRACT_FIELDS:
+            self.assertIsNone(doc.get(fieldname), fieldname)
 
     def test_company_defaults_fill_blanks_preserve_overrides_and_snapshot(self):
         self.clear_synthetic_company_defaults()
@@ -273,10 +374,10 @@ class TestPZSalesContract(IntegrationTestCase):
         later = contract(**({fieldname: None for fieldname in COMPANY_DEFAULT_FIELDS}))
         self.assertEqual(later.currency, settings.currency)
         self.assertEqual(later.selling_price_list, settings.selling_price_list)
-        self.assertEqual(later.governing_law, settings.governing_law)
+        self.assertEqual(later.governing_law, 'Synthetic placeholder; not legal advice or real agreement')
 
-        # A legal-only profile fills legal blanks but leaves native Frappe
-        # currency-dependent defaults byte-for-byte unchanged.
+        # Legacy legal profile values are retained in settings, but are no
+        # longer copied invisibly into new contracts.
         from frappe.model.document import Document
 
         saved_profile = {fieldname: settings.get(fieldname) for fieldname in COMPANY_DEFAULT_FIELDS}
@@ -300,10 +401,20 @@ class TestPZSalesContract(IntegrationTestCase):
                 'beneficiary', 'bank_branch', 'account_iban', 'swift_reference',
             )
         }
+        legal_fields = (
+            'delivery_arrangement', 'transport_responsibility', 'insurance_responsibility',
+            'measurement_basis', 'timezone', 'business_days', 'opens_at', 'closes_at',
+            'holiday_list', 'notice_channel', 'collection_grace', 'grace_unit',
+            'collection_arrangement', 'delay_charges', 'penalty_basis_cap', 'cure_period',
+            'latent_claim_period', 'force_majeure_threshold', 'governing_law', 'courts',
+        )
+        legal_before = {fieldname: legal_only.get(fieldname) for fieldname in legal_fields}
         legal_only._apply_company_defaults()
         for fieldname, value in dependent_before.items():
             self.assertEqual(legal_only.get(fieldname), value, fieldname)
         self.assertEqual(legal_only.seller_signatory, saved_profile['seller_signatory'])
+        for fieldname, value in legal_before.items():
+            self.assertEqual(legal_only.get(fieldname), value, fieldname)
         for fieldname, value in saved_profile.items():
             settings.set(fieldname, value)
         settings.save()
@@ -373,10 +484,23 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertFalse(frappe.has_permission('PZ Contract Defaults', 'create'))
         returned = get_company_defaults(COMPANY)
         self.assertEqual(returned['bank_receiving_account'], settings.bank_receiving_account)
-        self.assertEqual(returned['governing_law'], settings.governing_law)
+        self.assertNotIn('governing_law', returned)
+        self.assertEqual(returned['allowed_incoterms'], ['EXW', 'FOB', 'CIF'])
         self.assertNotIn('company', returned)
         with self.assertRaises(frappe.FrappeTypeError):
             get_company_defaults({'name': COMPANY})
+
+    def test_contract_incoterms_require_builtin_or_company_enabled_master(self):
+        self.clear_synthetic_company_defaults()
+        self.synthetic_company_defaults(
+            additional_incoterms=[dict(incoterm='FCA')],
+        ).insert()
+        self.assertEqual(get_company_defaults(COMPANY)['allowed_incoterms'], ['EXW', 'FOB', 'CIF', 'FCA'])
+        self.assertEqual(contract(incoterm='FCA').incoterm, 'FCA')
+
+        self.clear_synthetic_company_defaults()
+        with self.assertRaises(frappe.ValidationError):
+            contract(incoterm='FCA')
 
     def test_defaults_record_company_cannot_be_changed(self):
         self.clear_synthetic_company_defaults()
@@ -577,7 +701,8 @@ class TestPZSalesContract(IntegrationTestCase):
                 with self.subTest(currency_precision=digits):
                     frappe.defaults.set_global_default('currency_precision',str(digits))
                     d=contract(submit=True,items=[dict(item_code='PZ Synthetic Bitumen',qty=qty,uom='Nos',
-                        rate=rate,grade='60/70',packaging='Synthetic drums',specification_reference='Synthetic precision QA')])
+                        rate=rate,grade_master=synthetic_bitumen_grade(),grade='PZ-SYNTHETIC-60-70',
+                        packaging='Synthetic drums',specification_reference='Synthetic precision QA')])
                     self.assertEqual((d.grand_total,d.advance_required),(total,required))
                     self.assertEqual(frappe.db.get_value('Sales Order',d.sales_order,'grand_total'),total)
                     receipt(d,partial,cash=True)
@@ -947,7 +1072,7 @@ class TestPZSalesContract(IntegrationTestCase):
             # cached metadata and restore it, without persisting a customization.
             for field in fields: field.precision='0'
             current=contract(submit=True,items=[dict(item_code='PZ Synthetic Bitumen',
-                qty=1,uom='Nos',rate=101,grade='60/70',packaging='Synthetic drums',
+                qty=1,uom='Nos',rate=101,grade_master=synthetic_bitumen_grade(),grade='PZ-SYNTHETIC-60-70',packaging='Synthetic drums',
                 specification_reference='Synthetic zero-decimal precision QA')])
             self.assertEqual(current.precision('advance_required'),0)
             self.assertEqual(current.advance_required,30)
