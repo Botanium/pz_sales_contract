@@ -135,6 +135,23 @@ class TestEntryPolicy(unittest.TestCase):
         self.policy.apply_item_packaging(row, old)
         self.assertEqual(row.packaging, old.packaging)
 
+    def test_amendment_copy_match_requires_the_same_line_content(self):
+        old = Doc(name='saved-row', idx=1, item_code='Bitumen - Bulk',
+            grade_master='Grade 60/70', grade='60/70', qty=10, uom='Nos',
+            rate=100, specification_reference='Legacy reference', packaging='Legacy pack')
+        copied = Doc(name='new-row', idx=1, item_code='Bitumen - Bulk',
+            grade_master='Grade 60/70', grade='60/70', qty=10, uom='Nos',
+            rate=100, specification_reference='Legacy reference', packaging=None)
+        self.assertIsNone(self.policy.previous_item_packaging(copied, [old]))
+        self.assertIs(self.policy.previous_item_packaging(copied, [old], allow_copy_match=True), old)
+
+        replacement = Doc(copied)
+        replacement.qty = 20
+        self.assertIsNone(self.policy.previous_item_packaging(
+            replacement, [old], allow_copy_match=True))
+        self.policy.apply_item_packaging(replacement)
+        self.assertEqual(replacement.packaging, 'Bulk')
+
     def test_location_selection_snapshots_label_and_rejects_disabled_new_selection(self):
         doc = Doc(entry_policy_version=self.policy.ENTRY_POLICY_VERSION, contract_location='loc-1')
         self.frappe.get_doc.return_value = Doc(location_name='Mersin, Turkey', disabled=0)

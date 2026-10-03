@@ -281,6 +281,19 @@ class TestPZSalesContract(IntegrationTestCase):
         doc.save()
         self.assertEqual(doc.items[0].packaging, 'Historical legacy snapshot')
 
+        old_row = doc.items[0]
+        old_row_name = old_row.name
+        replacement = dict(item_code=old_row.item_code, qty=old_row.qty,
+            uom=old_row.uom, rate=old_row.rate, grade_master=old_row.grade_master,
+            grade=old_row.grade, packaging='Historical legacy snapshot',
+            specification_reference=old_row.specification_reference)
+        doc.set('items', [])
+        doc.append('items', replacement)
+        doc.save()
+        doc.reload()
+        self.assertNotEqual(doc.items[0].name, old_row_name)
+        self.assertEqual(doc.items[0].packaging, 'Drum')
+
         doc.items[0].item_code = 'PZ Synthetic Bitumen'
         doc.items[0].packaging = 'Drum'
         doc.specifications[0].item_code = 'PZ Synthetic Bitumen'
@@ -888,6 +901,9 @@ class TestPZSalesContract(IntegrationTestCase):
         d=contract(submit=True, seller_signatory=None, cash_receiving_account=None)
         self.assertEqual(d.seller_signatory, 'Synthetic approved signer at creation')
         self.assertIsNone(d.cash_receiving_account)
+        frappe.db.set_value('PZ Contract Item', d.items[0].name,
+            'packaging', 'Historical amendment snapshot')
+        d.reload()
         settings.seller_signatory = 'Synthetic later default; never rewrite an agreed contract'
         settings.cash_receiving_account = 'PZ Synthetic Cash - PZT'
         settings.save()
@@ -914,6 +930,7 @@ class TestPZSalesContract(IntegrationTestCase):
         frappe.set_user('Administrator')
         amendment.insert()
         self.assertEqual(amendment.terms_version, CURRENT_TERMS_VERSION)
+        self.assertEqual(amendment.items[0].packaging, 'Historical amendment snapshot')
         self.assertEqual(amendment.governing_law, 'Synthetic historical law retained on amendment')
         self.assertEqual(amendment.approval_received, '2026-10-01T09:00:00+03:00')
         self.assertEqual(amendment.advance_deadline, '2026-10-02T09:00:00+03:00')

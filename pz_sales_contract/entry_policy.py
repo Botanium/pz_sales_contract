@@ -35,6 +35,20 @@ def uses_entry_policy(doc):
     return doc.get('entry_policy_version') == ENTRY_POLICY_VERSION
 
 
+def previous_item_packaging(item, saved_items, allow_copy_match=False):
+    name = item.get('name')
+    if name:
+        previous = next((row for row in saved_items if row.get('name') == name), None)
+        if previous:
+            return previous
+    if not allow_copy_match:
+        return None
+    copied_fields = ('grade_master', 'grade', 'qty', 'uom', 'rate', 'specification_reference')
+    return next((row for row in saved_items
+        if row.idx == item.idx and row.item_code == item.item_code
+        and all(row.get(fieldname) == item.get(fieldname) for fieldname in copied_fields)), None)
+
+
 def apply_item_packaging(item, previous=None):
     if previous and previous.item_code == item.item_code:
         # The stored value is a historical snapshot for an unchanged Item.

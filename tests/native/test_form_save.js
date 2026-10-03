@@ -187,8 +187,8 @@ test("new contract boot metadata hides FX and price-list inputs before form refr
   assert.equal(ui.frm.fields_dict.conversion_rate.df.hidden, 1);
   assert.equal(ui.frm.fields_dict.selling_price_list.df.hidden, 1);
   await ui.frm.refresh(); await flush();
-  assert.equal(ui.frm.fields_dict.conversion_rate.df.hidden, true);
-  assert.equal(ui.frm.fields_dict.selling_price_list.df.hidden, true);
+  assert.equal(ui.frm.fields_dict.conversion_rate.df.hidden, 1);
+  assert.equal(ui.frm.fields_dict.selling_price_list.df.hidden, 1);
 });
 
 test("native Save requires a replacement after a disallowed Incoterm is cleared", async () => {

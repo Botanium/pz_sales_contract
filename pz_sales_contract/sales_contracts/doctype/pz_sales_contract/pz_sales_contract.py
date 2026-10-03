@@ -8,7 +8,8 @@ from frappe.utils import getdate
 from pz_sales_contract.calendar import add_open_hours, schedule
 from pz_sales_contract.contract_terms import CURRENT_TERMS_VERSION, snapshot_for_new_contract
 from pz_sales_contract.entry_policy import (
-    ENTRY_POLICY_VERSION, apply_item_packaging, apply_usd_policy, uses_entry_policy, validate_location,
+    ENTRY_POLICY_VERSION, apply_item_packaging, apply_usd_policy,
+    previous_item_packaging, uses_entry_policy, validate_location,
 )
 from pz_sales_contract.sales_contracts.doctype.pz_contract_defaults.pz_contract_defaults import (
     COMPANY_DEFAULT_FIELDS,
@@ -378,10 +379,11 @@ class PZSalesContract(Document):
             master.check_permission('read')
             if master.disabled or not master.is_sales_item or item.qty <= 0 or item.rate <= 0:
                 frappe.throw('Choose an enabled sales Item and positive quantity/rate')
-            previous = next((r for r in saved_items if r.name == item.name), None)
-            if previous is None:
-                previous = next((r for r in saved_items
-                    if r.idx == item.idx and r.item_code == item.item_code), None)
+            # Frappe amendments copy child rows with new names. In that copy
+            # flow, positional matching also requires the source line content
+            # to match; a replacement row must derive a fresh value.
+            previous = previous_item_packaging(item, saved_items,
+                allow_copy_match=bool(self.is_new() and self.amended_from))
             apply_item_packaging(item, previous)
             factor = 1 if item.uom == master.stock_uom else next((r.conversion_factor for r in master.uoms if r.uom == item.uom), None)
             if not factor or factor <= 0:
