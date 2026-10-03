@@ -133,6 +133,7 @@ function nativeDesk({ nativeRequests = false } = {}) {
   Object.assign(doc, {
     seller_address: "Address A", seller_signatory: "Signer A", seller_position: "Position A",
     currency: "USD", conversion_rate: 1, bank_receiving_account: "Bank A", cash_receiving_account: null,
+    incoterm: "FOB",
   });
   locals[doc.doctype] = { [doc.name]: doc };
   for (const [fieldname, dt] of [["items", "PZ Contract Item"], ["specifications", "PZ Contract Specification"]]) {
@@ -180,6 +181,20 @@ function nativeDesk({ nativeRequests = false } = {}) {
     },
   };
 }
+
+test("native Save requires a replacement after a disallowed Incoterm is cleared", async () => {
+  const ui = nativeDesk(); await ui.setup();
+  ui.frm.doc.incoterm = "FCA";
+  await ui.frm.refresh(); await flush(); await ui.respond({});
+  assert.equal(ui.frm.doc.incoterm, null);
+  assert.equal(ui.frappe.ui.form.check_mandatory(ui.frm), false);
+  await ui.save();
+  assert.equal(ui.saves.length, 0);
+  await ui.frm.set_value("incoterm", "EXW");
+  await ui.save();
+  assert.equal(ui.saves.length, 1);
+  assert.equal(ui.saves[0].incoterm, "EXW");
+});
 
 test("native Save cannot overtake a paused Company clear", async () => {
   const ui = nativeDesk(); await ui.setup();
