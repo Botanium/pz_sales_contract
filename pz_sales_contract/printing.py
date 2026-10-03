@@ -1,12 +1,13 @@
 import base64
-import json
 from pathlib import Path
 
 import frappe
 from frappe.utils import fmt_money
 from frappe.utils.pdf import pdf_body_html as default_body
 
+from pz_sales_contract.contract_terms import CURRENT_TERMS_VERSION, clauses_for_contract
 from pz_sales_contract.payments import payment_status
+from pz_sales_contract.sales_contracts.doctype.pz_sales_contract.pz_sales_contract import ITEM_ONLY_DRAFT_SO_SCOPE
 
 
 def validate_format(doc, method=None):
@@ -65,18 +66,33 @@ def pdf_body_html(template, args, **kwargs):
     doc.check_permission('read')
     doc.check_permission('print')
     path = Path(frappe.get_app_path('pz_sales_contract'))
-    holiday = frappe._dict(frappe.parse_json(doc.holiday_calendar_snapshot))
-    holiday.holidays = [frappe._dict(row) for row in holiday.holidays]
+    holiday_data = frappe.parse_json(doc.holiday_calendar_snapshot) if doc.holiday_calendar_snapshot else {
+        'name': '', 'from_date': '', 'to_date': '', 'holidays': [],
+    }
+    holiday = frappe._dict(holiday_data)
+    holiday.holidays = [frappe._dict(row) for row in holiday.get('holidays', [])]
+    specification_rows = {}
+    for row in doc.specifications:
+        specification_rows.setdefault(row.item_code, []).append(row)
     spec_items = []
     seen = set()
     for row in doc.items:
-        key = (row.item_code,row.grade,row.specification_reference)
+        key = (row.item_code,row.grade)
         if key not in seen:
             seen.add(key)
-            spec_items.append(row)
+            spec_items.append({
+                'item_code': row.item_code,
+                'item_name': row.item_name,
+                'grade': row.grade,
+                'specification_rows': specification_rows.get(row.item_code, []),
+            })
+    sales_order_status = frappe.db.get_value('Sales Order', doc.sales_order, 'docstatus') if doc.sales_order else None
+    is_item_only_draft = doc.get('contract_scope_version') == ITEM_ONLY_DRAFT_SO_SCOPE
+    simple_print = doc.get('terms_version') == CURRENT_TERMS_VERSION
     context = dict(doc=doc, state=payment_status(doc), holiday=holiday, spec_items=spec_items,
+        is_item_only_draft=is_item_only_draft, simple_print=simple_print, sales_order_status=sales_order_status,
         format_money=fmt_money,
-        clauses=json.loads((path/'terms.json').read_text()),
+        clauses=clauses_for_contract(doc),
         logo='data:image/png;base64,'+base64.b64encode((path/'public/petrol_zone_logo.png').read_bytes()).decode(),
         erp_status=['Unsubmitted', 'Submitted', 'Cancelled'][int(doc.docstatus)])
     return frappe.render_template('pz_sales_contract/templates/contract.html', context)

@@ -9,14 +9,14 @@
     "item_code",
     "item_name",
     "description",
+    "grade_master",
     "grade",
     "packaging",
     "qty",
     "uom",
     "conversion_factor",
     "rate",
-    "amount",
-    "specification_reference"
+    "amount"
   ],
   "fields": [
     {
@@ -40,11 +40,20 @@
       "read_only": 1
     },
     {
-      "fieldname": "grade",
+      "fieldname": "grade_master",
       "label": "Grade",
+      "fieldtype": "Link",
+      "options": "Bitumen Grade",
+      "in_list_view": 1,
+      "description": "Choose the active Grade master for this contract line."
+    },
+    {
+      "fieldname": "grade",
+      "label": "Historical Grade snapshot",
       "fieldtype": "Data",
-      "reqd": 1,
-      "in_list_view": 1
+      "read_only": 1,
+      "depends_on": "eval:doc.grade && !doc.grade_master",
+      "description": "Preserves the free-text Grade recorded on contracts created before Grade master links were introduced."
     },
     {
       "fieldname": "packaging",
@@ -94,7 +103,8 @@
       "fieldname": "specification_reference",
       "label": "Certificate / agreed specification reference",
       "fieldtype": "Data",
-      "reqd": 1
+      "hidden": 1,
+      "read_only": 1
     }
   ],
   "permissions": [],

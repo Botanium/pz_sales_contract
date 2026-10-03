@@ -14,6 +14,8 @@
     "currency",
     "conversion_rate",
     "selling_price_list",
+    "incoterm_settings",
+    "additional_incoterms",
     "delivery_terms",
     "delivery_arrangement",
     "transport_responsibility",
@@ -97,10 +99,24 @@
       "options": "Price List"
     },
     {
-      "fieldname": "delivery_terms",
-      "label": "Company delivery and legal schedule defaults",
+      "fieldname": "incoterm_settings",
+      "label": "Contract Incoterm choices",
       "fieldtype": "Section Break",
       "collapsible": 1
+    },
+    {
+      "fieldname": "additional_incoterms",
+      "label": "Additional allowed Incoterms",
+      "fieldtype": "Table",
+      "options": "PZ Contract Incoterm",
+      "description": "EXW, FOB and CIF are always available. Add other existing Incoterm records here for this Company."
+    },
+    {
+      "fieldname": "delivery_terms",
+      "label": "Historical delivery and legal schedule defaults",
+      "fieldtype": "Section Break",
+      "collapsible": 1,
+      "description": "Retained for existing configuration and contract history. These values are not copied into new contracts while the deal-specific schedule is absent from the contract form."
     },
     {
       "fieldname": "delivery_arrangement",

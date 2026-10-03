@@ -83,7 +83,11 @@
     "internal",
     "sales_order",
     "first_family",
-    "amended_from"
+    "amended_from",
+    "terms_snapshot",
+    "terms_version",
+    "contract_scope_version",
+    "cancelled_sales_order_reference"
   ],
   "fields": [
     {
@@ -111,7 +115,7 @@
       "options": "Company",
       "reqd": 1,
       "in_list_view": 1,
-      "description": "Optional Company Contract Defaults fill blank seller details and agreed terms. Review them for this deal; changing Company clears Company-specific values."
+      "description": "Optional Company Contract Defaults fill blank seller, currency, price-list and receiving-account fields. Incoterms are filtered to built-in and Company choices; no term is auto-selected."
     },
     {
       "fieldname": "transaction_date",
@@ -121,9 +125,10 @@
     },
     {
       "fieldname": "delivery_date",
-      "label": "Planned delivery date",
+      "label": "Historical planned delivery date",
       "fieldtype": "Date",
-      "reqd": 1
+      "hidden": 1,
+      "description": "Retained for existing contracts; enter delivery date on the linked Sales Order for new contracts."
     },
     {
       "fieldname": "customer_details",
@@ -247,9 +252,11 @@
     },
     {
       "fieldname": "taxes",
-      "label": "Taxes / charges",
+      "label": "Historical taxes / charges",
       "fieldtype": "Table",
-      "options": "Sales Taxes and Charges"
+      "options": "Sales Taxes and Charges",
+      "hidden": 1,
+      "description": "Retained for existing contracts; record applicable taxes on the linked Sales Order for new contracts."
     },
     {
       "fieldname": "subtotal",
@@ -263,7 +270,8 @@
       "label": "Taxes / charges total",
       "fieldtype": "Currency",
       "options": "currency",
-      "read_only": 1
+      "read_only": 1,
+      "hidden": 1
     },
     {
       "fieldname": "grand_total",
@@ -315,62 +323,63 @@
       "fieldname": "delivery_terms",
       "label": "Delivery arrangements, working hours and legal schedule",
       "fieldtype": "Section Break",
-      "collapsible": 1
+      "collapsible": 1,
+      "hidden": 1
     },
     {
       "fieldname": "delivery_arrangement",
       "label": "Signed delivery / risk arrangement",
       "fieldtype": "Small Text",
-      "reqd": 1
+      "hidden": 1
     },
     {
       "fieldname": "transport_responsibility",
       "label": "Transport responsibility",
       "fieldtype": "Small Text",
-      "reqd": 1
+      "hidden": 1
     },
     {
       "fieldname": "insurance_responsibility",
       "label": "Insurance responsibility",
       "fieldtype": "Small Text",
-      "reqd": 1
+      "hidden": 1
     },
     {
       "fieldname": "measurement_basis",
       "label": "Measurement basis / tolerance / price adjustment",
       "fieldtype": "Small Text",
-      "reqd": 1
+      "hidden": 1
     },
     {
       "fieldname": "timezone",
       "label": "Business IANA time zone",
       "fieldtype": "Data",
-      "reqd": 1
+      "hidden": 1
     },
     {
       "fieldname": "business_days",
       "label": "Business days (Monday,Tuesday,...)",
       "fieldtype": "Data",
-      "reqd": 1
+      "hidden": 1
     },
     {
       "fieldname": "opens_at",
       "label": "Opening time",
       "fieldtype": "Time",
-      "reqd": 1
+      "hidden": 1
     },
     {
       "fieldname": "closes_at",
       "label": "Closing time",
       "fieldtype": "Time",
-      "reqd": 1
+      "hidden": 1
     },
     {
       "fieldname": "holiday_list",
       "label": "Agreed holiday calendar",
       "fieldtype": "Link",
       "options": "Holiday List",
-      "reqd": 1
+      "hidden": 1
     },
     {
       "fieldname": "holiday_calendar_snapshot",
@@ -378,86 +387,88 @@
       "fieldtype": "Code",
       "options": "JSON",
       "read_only": 1,
-      "no_copy": 1
+      "no_copy": 1,
+      "hidden": 1
     },
     {
       "fieldname": "notice_channel",
       "label": "Agreed written notice channel",
       "fieldtype": "Data",
-      "reqd": 1
+      "hidden": 1
     },
     {
       "fieldname": "collection_grace",
       "label": "Collection grace period",
       "fieldtype": "Float",
-      "reqd": 1
+      "hidden": 1
     },
     {
       "fieldname": "grace_unit",
       "label": "Collection grace unit",
       "fieldtype": "Select",
       "options": "\nCalendar hours\nBusiness hours",
-      "reqd": 1
+      "hidden": 1
     },
     {
       "fieldname": "collection_arrangement",
       "label": "Readiness / pickup window and instructions",
       "fieldtype": "Small Text",
-      "reqd": 1
+      "hidden": 1
     },
     {
       "fieldname": "delay_charges",
       "label": "Storage / handling / reheating / reloading / demurrage bases",
       "fieldtype": "Small Text",
-      "reqd": 1
+      "hidden": 1
     },
     {
       "fieldname": "penalty_basis_cap",
       "label": "Penalty / delay compensation basis and cap (or expressly none)",
       "fieldtype": "Small Text",
-      "reqd": 1
+      "hidden": 1
     },
     {
       "fieldname": "cure_period",
       "label": "Default cure period",
       "fieldtype": "Data",
-      "reqd": 1
+      "hidden": 1
     },
     {
       "fieldname": "latent_claim_period",
       "label": "Latent defect notification period",
       "fieldtype": "Data",
-      "reqd": 1
+      "hidden": 1
     },
     {
       "fieldname": "force_majeure_threshold",
       "label": "Force majeure termination threshold",
       "fieldtype": "Data",
-      "reqd": 1
+      "hidden": 1
     },
     {
       "fieldname": "governing_law",
       "label": "Governing law",
       "fieldtype": "Data",
-      "reqd": 1
+      "hidden": 1
     },
     {
       "fieldname": "courts",
       "label": "Agreed courts",
       "fieldtype": "Data",
-      "reqd": 1
+      "hidden": 1
     },
     {
       "fieldname": "specs",
       "label": "Agreed specifications",
-      "fieldtype": "Section Break"
+      "fieldtype": "Section Break",
+      "depends_on": "eval:doc.specifications && doc.specifications.length > 0"
     },
     {
       "fieldname": "specifications",
       "label": "Product specifications",
       "fieldtype": "Table",
       "options": "PZ Contract Specification",
-      "reqd": 1
+      "depends_on": "eval:doc.specifications && doc.specifications.length > 0"
     },
     {
       "fieldname": "payment",
@@ -508,52 +519,60 @@
       "fieldname": "records",
       "label": "Approval and collection record",
       "fieldtype": "Section Break",
-      "collapsible": 1
+      "collapsible": 1,
+      "hidden": 1
     },
     {
       "fieldname": "approval_received",
       "label": "Order Approval received (ISO 8601 with offset)",
       "fieldtype": "Data",
-      "allow_on_submit": 1
+      "allow_on_submit": 1,
+      "hidden": 1
     },
     {
       "fieldname": "approval_evidence",
       "label": "Written buyer approval and seller acceptance evidence",
       "fieldtype": "Small Text",
-      "allow_on_submit": 1
+      "allow_on_submit": 1,
+      "hidden": 1
     },
     {
       "fieldname": "advance_deadline",
       "label": "30% advance deadline (business time zone)",
       "fieldtype": "Data",
       "read_only": 1,
-      "allow_on_submit": 1
+      "allow_on_submit": 1,
+      "hidden": 1
     },
     {
       "fieldname": "ready_received",
       "label": "Ready Notice received (ISO 8601 with offset)",
       "fieldtype": "Data",
-      "allow_on_submit": 1
+      "allow_on_submit": 1,
+      "hidden": 1
     },
     {
       "fieldname": "ready_evidence",
       "label": "Ready Notice reliable delivery evidence",
       "fieldtype": "Small Text",
-      "allow_on_submit": 1
+      "allow_on_submit": 1,
+      "hidden": 1
     },
     {
       "fieldname": "balance_deadline",
       "label": "70% balance deadline (business time zone)",
       "fieldtype": "Data",
       "read_only": 1,
-      "allow_on_submit": 1
+      "allow_on_submit": 1,
+      "hidden": 1
     },
     {
       "fieldname": "collection_deadline",
       "label": "Collection deadline (business time zone)",
       "fieldtype": "Data",
       "read_only": 1,
-      "allow_on_submit": 1
+      "allow_on_submit": 1,
+      "hidden": 1
     },
     {
       "fieldname": "internal",
@@ -567,7 +586,8 @@
       "fieldtype": "Link",
       "options": "Sales Order",
       "read_only": 1,
-      "no_copy": 1
+      "no_copy": 1,
+      "description": "New-scope contracts create this order as Draft. Enter the delivery date and applicable taxes on the Sales Order, then submit it manually."
     },
     {
       "fieldname": "first_family",
@@ -584,6 +604,37 @@
       "options": "PZ Sales Contract",
       "read_only": 1,
       "no_copy": 1
+    },
+    {
+      "fieldname": "contract_scope_version",
+      "label": "Contract scope version (internal)",
+      "fieldtype": "Data",
+      "read_only": 1,
+      "hidden": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "cancelled_sales_order_reference",
+      "label": "Removed draft Sales Order reference",
+      "fieldtype": "Data",
+      "read_only": 1,
+      "hidden": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "terms_snapshot",
+      "label": "Contract terms snapshot (internal)",
+      "fieldtype": "Long Text",
+      "read_only": 1,
+      "hidden": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "terms_version",
+      "label": "Contract terms version (internal)",
+      "fieldtype": "Data",
+      "read_only": 1,
+      "hidden": 1
     }
   ],
   "permissions": [

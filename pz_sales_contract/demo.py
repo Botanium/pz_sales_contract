@@ -8,7 +8,7 @@ from pathlib import Path
 import frappe
 from pypdf import PdfReader
 from pz_sales_contract.payments import payment_status
-from pz_sales_contract.testing import setup_fixtures, contract, receipt, new_customer
+from pz_sales_contract.testing import setup_fixtures, contract, receipt, new_customer, synthetic_bitumen_grade
 
 
 def ensure_disposable():
@@ -71,9 +71,8 @@ def export():
                 raise RuntimeError('Draft header missing from continuation page')
         if 'Amount in words: None' in text:
             raise RuntimeError('Missing amount in words')
-        if 'Synthetic closure' not in text:
-            raise RuntimeError('Holiday schedule missing')
-        for expected in ['15. Authority','Force Majeure','Signatures','Commercial Schedule','Payment Instructions','60-70']:
+        for expected in ['1. Contract Documents','2. Contract Amount and Payment Split',
+            'Signatures','Payment Instructions','Contract Amount','PZ-SYNTHETIC-60-70']:
             if expected not in text:
                 raise RuntimeError('Missing PDF content: '+expected)
         (output/(label+'.pdf')).write_bytes(pdf)
@@ -86,7 +85,10 @@ def export():
     save('Petrol-Zone-Synthetic-Returning-Customer',later,False)
     previous=frappe.db.get_single_value('Selling Settings','allow_multiple_items')
     frappe.db.set_single_value('Selling Settings','allow_multiple_items',1)
-    long=contract(items=[dict(item_code='PZ Synthetic Bitumen',qty=1,uom='Nos',rate=10,grade='60/70',packaging='Synthetic drums',specification_reference='Synthetic long-order QA') for _ in range(30)],submit=True)
+    grade_master = synthetic_bitumen_grade()
+    long=contract(items=[dict(item_code='PZ Synthetic Bitumen',qty=1,uom='Nos',rate=10,
+        grade_master=grade_master,grade='PZ-SYNTHETIC-60-70',packaging='Synthetic drums',
+        specification_reference='Synthetic long-order QA') for _ in range(30)],submit=True)
     save('Petrol-Zone-Synthetic-Long-Contract-DRAFT',long,True)
     frappe.db.set_single_value('Selling Settings','allow_multiple_items',previous)
     frappe.db.commit()

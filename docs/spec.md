@@ -2,14 +2,17 @@
 
 User-authorized scope: implement, test and publish this dedicated app in public Botanium/pz_sales_contract. Production installation/deployment, sending contracts and signing contracts remain excluded.
 
-- Sales team selects ERPNext Customer, Item and linked details; quantity/UOM/grade/packaging/rate/currency/tax/discount/totals and Incoterm plus named place are captured.
-- All 15 full clauses and supplied signature/specification/payment sections preserve the supplied branded five-page master’s commercial meaning. Capture referenced missing Commercial Schedule inputs; invent no legal terms, fees, calendars, jurisdiction or deadlines.
-- Attractive branded print/PDF with supplied logo, clean pagination, full terms/specifications and signatures.
+- Sales team selects ERPNext Customer, Item, a per-line Bitumen Grade master and linked details; quantity/UOM/packaging/rate/currency/discount/item-only totals and Incoterm plus named place are captured. Contract line Grade maps to Sales Order Item `custom_bitumen_grade`; legacy free-text Grade snapshots remain intact for existing contracts. New contracts omit delivery date and contract tax details; they create a linked Draft Sales Order for manual delivery-date/tax entry and submission. Legacy contracts retain their stored values and prior Sales Order behavior.
+- New contract families pin the user-approved v2 clause list and print version in hidden fields. Their print uses the completed deal details and payment instructions, omits the Commercial Schedule, product-specification appendix, Approval / Collection Record and fixed 24-business-hour text, and retains signature lines. The 30% advance and 70% balance remain calculated on discounted goods only; any applicable taxes are separately recorded on the linked Sales Order or invoice and are outside that Contract Amount. V2 adds no payment deadline, penalty, charge, delivery default or legal venue.
+- Amendments retain their source clause snapshot and print version. Pre-version and pre-snapshot records keep the legacy print layout; records without a snapshot use immutable `terms_versions/v1.json`, guarded by its pinned SHA-256. Existing schedule/specification schema and historical values remain stored for these legacy records. The optional specification-reference value remains hidden from entry and print.
+- Attractive branded print/PDF with supplied logo, clean pagination, versioned terms and signatures.
 - First contract ONLY per customer bears conspicuous DRAFT until the full required 30% advance, not a token partial payment. Separate this business marker from ERP docstatus.
 - Enforce on server and all native app prints using submitted/noncancelled appropriately allocated receipt and clearance/reconciliation evidence. Cash uses native restricted-finance submitted receipt and GL evidence; FX must follow native semantics or explicitly fail closed.
 - Handle cancellations, amendments, concurrency, duplicate allocations and company/currency isolation. Describe second-contract-before-first-advance bypass without adding an unauthorized later-contract restriction.
 - Feature branch and draft PR; preserve unrelated repos/work; public staged diff has no credentials, real customer/payment records, dumps or Library metadata.
 - Native v16 integration in a disposable site with synthetic fixtures; permission, first/returning, draft/cancelled/submitted receipts, insufficient advances, cancellation, arithmetic and print/PDF tests. Verify exact remote commit and CI.
+- Company-specific Incoterm choices always include EXW/FOB/CIF, allow only additional native Incoterm masters configured per seller Company, and do not auto-select a term.
+- Approved follow-up policy: the contract uses discounted item amounts only; delivery date and applicable taxes are completed on the linked Sales Order before the user manually submits it. Keep the linked order Draft until that user action. Do not auto-submit or invent a delivery date.
 
 The readable master SHA and transcription provenance are in master-provenance.md. README records implementation decisions and explicit limitations.
 

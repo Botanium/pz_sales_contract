@@ -131,8 +131,9 @@ function nativeDesk({ nativeRequests = false } = {}) {
     doc[field.fieldname] = ["Float", "Currency"].includes(field.fieldtype) ? 1 : "Synthetic A";
   }
   Object.assign(doc, {
-    seller_address: "Address A", seller_signatory: "Signer A", governing_law: "Law A",
+    seller_address: "Address A", seller_signatory: "Signer A", seller_position: "Position A",
     currency: "USD", conversion_rate: 1, bank_receiving_account: "Bank A", cash_receiving_account: null,
+    incoterm: "FOB",
   });
   locals[doc.doctype] = { [doc.name]: doc };
   for (const [fieldname, dt] of [["items", "PZ Contract Item"], ["specifications", "PZ Contract Specification"]]) {
@@ -181,6 +182,20 @@ function nativeDesk({ nativeRequests = false } = {}) {
   };
 }
 
+test("native Save requires a replacement after a disallowed Incoterm is cleared", async () => {
+  const ui = nativeDesk(); await ui.setup();
+  ui.frm.doc.incoterm = "FCA";
+  await ui.frm.refresh(); await flush(); await ui.respond({});
+  assert.equal(ui.frm.doc.incoterm, null);
+  assert.equal(ui.frappe.ui.form.check_mandatory(ui.frm), false);
+  await ui.save();
+  assert.equal(ui.saves.length, 0);
+  await ui.frm.set_value("incoterm", "EXW");
+  await ui.save();
+  assert.equal(ui.saves.length, 1);
+  assert.equal(ui.saves[0].incoterm, "EXW");
+});
+
 test("native Save cannot overtake a paused Company clear", async () => {
   const ui = nativeDesk(); await ui.setup();
   const { frm, frappe } = ui;
@@ -193,16 +208,16 @@ test("native Save cannot overtake a paused Company clear", async () => {
   frm.set_value("bank_receiving_account", "Bank B"); await flush();
   assert.equal(frappe.ui.form.check_mandatory(frm), true);
   await ui.save();
-  assert.equal(ui.saves.length, 0, "never serialize stale signer/legal text with Company B");
+  assert.equal(ui.saves.length, 0, "never serialize stale seller values with Company B");
   assert.ok(frm.is_new());
   assert.match(String(ui.messages.at(-1)), /Company details.*updating/i);
 
   await ui.releaseAjax();
-  assert.equal(frm.doc.governing_law, null);
+  assert.equal(frm.doc.seller_position, null);
   const profileB = Object.fromEntries(schema.fields.filter((field) => field.reqd)
     .map((field) => [field.fieldname, ["Float", "Currency"].includes(field.fieldtype) ? 1 : "Synthetic B"]));
   Object.assign(profileB, {
-    seller_address: "Address B", seller_signatory: "Signer B", governing_law: "Law B",
+    seller_address: "Address B", seller_signatory: "Signer B", seller_position: "Position B",
     currency: "USD", conversion_rate: 1, bank_receiving_account: "Bank B",
   });
   await ui.respond(profileB);
@@ -211,7 +226,7 @@ test("native Save cannot overtake a paused Company clear", async () => {
   assert.equal(ui.saves.length, 1, "an explicit retry succeeds after clearing/defaults finish");
   assert.equal(ui.saves[0].company, "Company B");
   assert.equal(ui.saves[0].seller_signatory, "Signer B");
-  assert.equal(ui.saves[0].governing_law, "Law B");
+  assert.equal(ui.saves[0].seller_position, "Position B");
   assert.equal(ui.saves[0].seller_address, "Address B");
   assert.equal(ui.saves[0].bank_receiving_account, "Bank B");
 });

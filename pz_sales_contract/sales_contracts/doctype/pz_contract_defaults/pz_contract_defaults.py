@@ -2,6 +2,9 @@ import frappe
 from frappe.model.document import Document
 
 
+DEFAULT_CONTRACT_INCOTERMS = ("EXW", "FOB", "CIF")
+
+
 COMPANY_DEFAULT_FIELDS = (
     "seller_address",
     "seller_signatory",
@@ -9,26 +12,6 @@ COMPANY_DEFAULT_FIELDS = (
     "currency",
     "conversion_rate",
     "selling_price_list",
-    "delivery_arrangement",
-    "transport_responsibility",
-    "insurance_responsibility",
-    "measurement_basis",
-    "timezone",
-    "business_days",
-    "opens_at",
-    "closes_at",
-    "holiday_list",
-    "notice_channel",
-    "collection_grace",
-    "grace_unit",
-    "collection_arrangement",
-    "delay_charges",
-    "penalty_basis_cap",
-    "cure_period",
-    "latent_claim_period",
-    "force_majeure_threshold",
-    "governing_law",
-    "courts",
     "bank_receiving_account",
     "cash_receiving_account",
     "beneficiary",
@@ -73,6 +56,16 @@ class PZContractDefaults(Document):
             if self.currency and price_list.currency != self.currency:
                 frappe.throw("Default selling price list must use the selected default currency")
 
+        seen_incoterms = set()
+        for row in self.get("additional_incoterms") or []:
+            if row.incoterm in DEFAULT_CONTRACT_INCOTERMS:
+                frappe.throw(f"{row.incoterm} is already available by default")
+            if row.incoterm in seen_incoterms:
+                frappe.throw(f"Incoterm {row.incoterm} is listed more than once")
+            seen_incoterms.add(row.incoterm)
+            incoterm = frappe.get_doc("Incoterm", row.incoterm)
+            incoterm.check_permission("read")
+
         for fieldname, kind in (("bank_receiving_account", "Bank"), ("cash_receiving_account", "Cash")):
             account_name = self.get(fieldname)
             if not account_name:
@@ -97,10 +90,43 @@ def get_company_defaults(company: str):
     company_doc.check_permission("read")
     values = frappe.db.get_value("PZ Contract Defaults", {"company": company_doc.name}, list(COMPANY_DEFAULT_FIELDS), as_dict=True)
     if not values:
-        return {}
-    return {
+        return {"allowed_incoterms": get_allowed_contract_incoterms(company_doc.name)}
+    result = {
         fieldname: values.get(fieldname)
         for fieldname in COMPANY_DEFAULT_FIELDS
         if values.get(fieldname) not in (None, "")
         and not (fieldname == "conversion_rate" and values.get(fieldname) == 0)
     }
+    result["allowed_incoterms"] = get_allowed_contract_incoterms(company_doc.name)
+    return result
+
+
+def get_allowed_contract_incoterms(company: str):
+    allowed = list(DEFAULT_CONTRACT_INCOTERMS)
+    defaults_name = frappe.db.get_value("PZ Contract Defaults", {"company": company}, "name")
+    if defaults_name:
+        rows = frappe.get_all(
+            "PZ Contract Incoterm",
+            filters={
+                "parent": defaults_name,
+                "parenttype": "PZ Contract Defaults",
+                "parentfield": "additional_incoterms",
+            },
+            fields=["incoterm"],
+            order_by="idx asc",
+        )
+        allowed.extend(row.incoterm for row in rows if row.incoterm)
+    return list(dict.fromkeys(allowed))
+
+
+@frappe.whitelist()
+def get_allowed_incoterms(company: str):
+    """Return allowed native Incoterm records for a contract Company."""
+    if not (frappe.has_permission("PZ Sales Contract", "read")
+            or frappe.has_permission("PZ Sales Contract", "create")):
+        frappe.throw("You need permission to read PZ Sales Contracts")
+    if not isinstance(company, str):
+        frappe.throw("Select a Company by name")
+    company_doc = frappe.get_doc("Company", company)
+    company_doc.check_permission("read")
+    return get_allowed_contract_incoterms(company_doc.name)
