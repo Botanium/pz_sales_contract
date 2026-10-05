@@ -43,6 +43,13 @@ class TestEntryPolicy(unittest.TestCase):
         with patch.dict(sys.modules, {'frappe': self.frappe, 'frappe.utils': utils}):
             spec.loader.exec_module(self.policy)
 
+    def test_optional_discount_normalizes_only_missing_or_valid_numbers(self):
+        for value in (None, '', 0, '0', 12.5, '12.5'):
+            self.assertEqual(self.policy.normalize_discount(value), float(value or 0))
+        for value in (-1, '-1', 'invalid', 'NaN', 'Infinity', '1e9999'):
+            with self.assertRaises(ValueError):
+                self.policy.normalize_discount(value)
+
     def test_usd_company_uses_one_without_currency_exchange_lookup(self):
         self.assertEqual(self.policy.usd_conversion_rate('USD', '2026-10-03'), 1)
         self.frappe.get_all.assert_not_called()

@@ -1,3 +1,8 @@
+{% macro payment_table() %}
+{% if payment_instructions %}<h2>Payment Instructions</h2>
+<table class="schedule"><thead><tr><th style="width:31%">Payment detail</th><th>Agreed instructions</th></tr></thead><tbody>{% for label,value in payment_instructions %}<tr><td>{{ label|e }}</td><td>{{ value|e }}</td></tr>{% endfor %}</tbody></table>
+<p>Confirm payment instructions with an independently known Petrol Zone contact before transferring funds or accepting any change of bank details.</p>{% endif %}
+{% endmacro %}
 {% macro party_table() %}
 {% if doc.party_entry_version == 'direct-v1' or doc.seller_name or doc.seller_email or doc.seller_phone or doc.buyer_phone or doc.buyer_email_phone %}
 <table class="details"><tr><td><strong>Seller</strong>{{ (doc.seller_name or doc.company)|e }}<br>Address: {{ doc.seller_address_display|e }}<br>Email: {{ (doc.seller_email or ('info@petrol-zone.com' if doc.party_entry_version != 'direct-v1' else ''))|e }}<br>Phone: {{ (doc.seller_phone or ('00964 770 000 3737 · 00971 505 65 1305' if doc.party_entry_version != 'direct-v1' else ''))|e }}</td><td><strong>Buyer</strong>Customer legal name: {{ doc.customer_name|e }}{% if doc.customer_tax_id %}<br>Registration / tax / ID: {{ doc.customer_tax_id|e }}{% endif %}<br>Address: {{ doc.address_display|e }}<br>Phone: {{ doc.buyer_phone|e }}<br>Representative: {{ doc.contact_display|e }}<br>Title: {{ doc.buyer_position|e }}{% if doc.buyer_email_phone %}<br>Email / phone: {{ doc.buyer_email_phone|e }}{% endif %}</td></tr></table>
@@ -73,9 +78,7 @@
 {% for clause in clauses %}<p>{{ clause|e }}</p>{% endfor %}
 </section>
 <section class="page">
-{{ header('Payment instructions and signatures') }}<h2>Payment Instructions</h2>
-<table class="schedule"><thead><tr><th style="width:31%">Payment detail</th><th>Agreed instructions</th></tr></thead><tbody>{% for label,key in [('Nominated ERP Bank account','bank_receiving_account'),('Agreed ERP Cash account','cash_receiving_account'),('Account beneficiary','beneficiary'),('Bank / branch','bank_branch'),('Currency / account / IBAN','account_iban'),('SWIFT / payment reference','swift_reference')] %}<tr><td>{{ label }}</td><td>{{ (doc.get(key) or 'Cash not agreed')|e }}</td></tr>{% endfor %}</tbody></table>
-<p>Confirm payment instructions with an independently known Petrol Zone contact before transferring funds or accepting any change of bank details.</p>
+{{ header('Payment instructions and signatures' if payment_instructions else 'Signatures') }}{{ payment_table() }}
 <h2>Signatures</h2><p>Each signatory confirms that they are authorised to sign for the party named below and that the party accepts this document, including its completed commercial details and the Contract Terms reproduced here.</p>
 <table class="details keep"><tr><td><strong>For Seller</strong>{{ (doc.seller_name or doc.company)|e }}<br><br>Authorised signatory: {{ doc.seller_signatory|e }}<br>Position: {{ doc.seller_position|e }}<div class="signature"></div>Signature / stamp<br><br>Date: __________________</td><td><strong>For Buyer</strong>{{ doc.customer_name|e }}<br><br>Authorised signatory: {{ doc.contact_display|e }}<br>Position: {{ doc.buyer_position|e }}<div class="signature"></div>Signature / stamp<br><br>Date: __________________</td></tr></table>
 <p class="quiet">Payment status reflects ERP receipt and bank reconciliation records available when this document is generated. The status indicator is informational and is not cryptographic proof.</p>
@@ -111,14 +114,13 @@
 <section class="page terms">{{ header('Contract terms') }}<h2>Contract Terms</h2>
 {% for clause in clauses[start:end] %}<p>{{ clause|e }}</p>{% endfor %}
 </section>{% endfor %}
-<section class="page">
+{% if doc.specifications or payment_instructions %}<section class="page">
 {{ header('Agreed specifications' if doc.specifications else 'Payment Instructions') }}
 {% if doc.specifications %}<h2>Appendix A · Agreed Product Specification</h2>
 <p>Complete the agreed requirements for the ordered product. Attach signed continuation sheets or the agreed certificate where needed.</p>
 {% for item in spec_items %}{% if item.specification_rows %}<h3>{{ item.item_name|e }} · {{ item.grade|e }}</h3><table><thead><tr><th>Property</th><th style="width:12%">Unit</th><th>Test Method</th><th>Requirement</th></tr></thead><tbody>{% for row in item.specification_rows %}<tr><td>{{ row.property|e }}</td><td>{{ (row.unit or '')|e }}</td><td>{{ row.test_method|e }}</td><td>{{ row.requirement|e }}</td></tr>{% endfor %}</tbody></table>{% endif %}{% endfor %}{% endif %}
-<h2>Payment Instructions</h2><table class="schedule"><thead><tr><th style="width:31%">Payment detail</th><th>Agreed instructions</th></tr></thead><tbody>{% for label,key in [('Nominated ERP Bank account','bank_receiving_account'),('Agreed ERP Cash account','cash_receiving_account'),('Account beneficiary','beneficiary'),('Bank / branch','bank_branch'),('Currency / account / IBAN','account_iban'),('SWIFT / payment reference','swift_reference')] %}<tr><td>{{ label }}</td><td>{{ (doc.get(key) or 'Cash not agreed')|e }}</td></tr>{% endfor %}</tbody></table>
-<p>Confirm payment instructions with an independently known Petrol Zone contact before transferring funds or accepting any change of bank details.</p>
-</section>
+{{ payment_table() }}
+</section>{% endif %}
 <section class="page">
 {{ header('Approvals and signatures') }}<h2>Order and Collection Record</h2>
 <table><thead><tr><th>Event</th><th>Recorded date / time</th></tr></thead><tbody>{% for label,key in [('Order Approval received','approval_received'),('30% advance deadline','advance_deadline'),('Ready Notice received','ready_received'),('70% balance deadline','balance_deadline'),('Collection deadline','collection_deadline')] %}<tr><td>{{ label }}</td><td>{{ (doc.get(key) or 'Not yet recorded')|e }}</td></tr>{% endfor %}</tbody></table>

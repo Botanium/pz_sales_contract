@@ -11,3 +11,8 @@ Existing contracts and their amendments retain their policy and stored snapshots
 Native Sales Orders retain Customer/Company identity and their own native address/contact behavior, independently of direct contract party text. New-policy contracts do not forward or compare Address/Contact links to the Sales Order. Historical orders retain their existing association checks. Contract prices, payment evidence, Grade, packaging, USD and delivery/tax policies are unchanged.
 
 Validation includes local schema, mandatory-field and form behavior checks plus native save, print, amendment and Sales Order tests in the disposable CI bench. No production installation, migration or transaction is authorized by this code change.
+
+
+Payment instructions are optional: nominated bank, agreed cash account, beneficiary, bank/branch, currency/account/IBAN and SWIFT/reference can all remain empty. Blank rows and an empty payment table are omitted from print. The nominated bank field is Data, retaining previous account-name text without rewriting stored values; the optional cash field remains an ERP Account Link. Desk may suggest configured payment details, but the server does not refill cleared payment inputs. Native receipt matching still requires exact account identity and the existing allocation, currency, ledger and reconciliation evidence. Blank or unrecognized bank text cannot confirm an advance.
+
+An omitted, null or empty Discount normalizes to zero before native arithmetic. Negative, nonnumeric, nonfinite or excessive discounts are rejected. Saving a draft never creates or submits a Sales Order.

@@ -454,7 +454,7 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertEqual(doc.conversion_rate, 1)
         self.assertEqual(doc.selling_price_list, 'PZ Synthetic USD')
         self.assertEqual(doc.seller_signatory, 'Explicit signer')
-        self.assertEqual(doc.bank_receiving_account, settings.bank_receiving_account)
+        self.assertIsNone(doc.bank_receiving_account)
         self.assertEqual(doc.named_place, 'Synthetic pickup point')
         old_rate, old_list = doc.conversion_rate, doc.selling_price_list
         settings.seller_signatory = 'Changed default signer'
@@ -545,7 +545,7 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertTrue(frappe.has_permission('PZ Contract Location', 'read', user=user))
         self.assertFalse(frappe.has_permission('PZ Contract Location', 'create', user=user))
 
-    def test_alternate_bank_requires_its_own_payment_instructions(self):
+    def test_alternate_bank_does_not_inherit_unrelated_optional_payment_instructions(self):
         self.clear_synthetic_company_defaults()
         self.synthetic_company_defaults().insert()
         alternate_bank = self.synthetic_alternate_bank_account()
@@ -553,10 +553,7 @@ class TestPZSalesContract(IntegrationTestCase):
             ('beneficiary', 'bank_branch', 'account_iban', 'swift_reference')
         )
         doc = contract(insert=False, bank_receiving_account=alternate_bank, **blank_instructions)
-        frappe.db.savepoint('alternate_bank_instructions')
-        with self.assertRaises(frappe.MandatoryError):
-            doc.insert()
-        frappe.db.rollback(save_point='alternate_bank_instructions')
+        doc.insert()
         self.assertEqual(doc.bank_receiving_account, alternate_bank)
         for fieldname in blank_instructions:
             self.assertIsNone(doc.get(fieldname), fieldname)
@@ -1561,3 +1558,59 @@ class TestPZSalesContract(IntegrationTestCase):
         doc.reload()
         doc.submit()
         self.assertEqual(frappe.db.get_value('Sales Order', doc.sales_order, 'docstatus'), 0)
+
+
+    def test_optional_payment_fields_remain_blank_despite_company_defaults(self):
+        from pz_sales_contract.parties import PAYMENT_INSTRUCTION_FIELDS
+        self.clear_synthetic_company_defaults()
+        self.synthetic_company_defaults().insert()
+        doc = contract(**dict.fromkeys(PAYMENT_INSTRUCTION_FIELDS))
+        doc.save()
+        for field in PAYMENT_INSTRUCTION_FIELDS:
+            self.assertFalse(doc.get(field), field)
+        html = frappe.get_print(doc.doctype, doc.name, print_format='Standard')
+        self.assertNotIn('<h2>Payment Instructions</h2>', html)
+        self.assertNotIn('Cash not agreed', html)
+        self.assertNotIn('>None<', html)
+        doc.submit()
+        self.assertEqual(frappe.db.get_value('Sales Order', doc.sales_order, 'docstatus'), 0)
+        self.assertTrue(payment_status(doc).payment_draft)
+        self.assertEqual(payment_status(doc).confirmed, 0)
+
+    def test_free_text_bank_is_saved_printed_but_unknown_account_never_confirms_receipts(self):
+        field = frappe.get_meta('PZ Sales Contract').get_field('bank_receiving_account')
+        self.assertEqual(field.fieldtype, 'Data')
+        self.assertFalse(field.options)
+        doc = contract(bank_receiving_account='Synthetic free-text bank instructions',
+            cash_receiving_account=None, submit=True)
+        self.assertEqual(doc.reload().bank_receiving_account, 'Synthetic free-text bank instructions')
+        self.assertIn('Synthetic free-text bank instructions', frappe.get_print(doc.doctype, doc.name))
+        paid = receipt(doc, 300)
+        reconcile(paid, self.bank_account)
+        self.assertEqual(payment_status(doc).confirmed, 0)
+        self.assertTrue(payment_status(doc).payment_draft)
+
+    def test_new_draft_discount_omitted_null_or_zero_uses_zero_without_creating_order(self):
+        for mode in ('omitted', None, 0):
+            with self.subTest(discount=mode):
+                payload = contract(insert=False).as_dict()
+                if mode == 'omitted':
+                    payload.pop('discount_amount', None)
+                else:
+                    payload['discount_amount'] = mode
+                payload['items'][0].update(qty=333, rate=350)
+                before_orders = frappe.db.count('Sales Order')
+                doc = frappe.get_doc(payload).insert()
+                doc.save()
+                self.assertEqual(doc.discount_amount, 0)
+                self.assertEqual(doc.grand_total, 116550)
+                self.assertEqual(doc.docstatus, 0)
+                self.assertFalse(doc.sales_order)
+                self.assertEqual(frappe.db.count('Sales Order'), before_orders)
+        for discount in (-1, 116551, 'not-a-number', 'NaN'):
+            with self.subTest(discount=discount):
+                doc = contract(insert=False, discount_amount=discount)
+                doc.items[0].qty = 333
+                doc.items[0].rate = 350
+                with self.assertRaises(frappe.ValidationError):
+                    doc.insert()
