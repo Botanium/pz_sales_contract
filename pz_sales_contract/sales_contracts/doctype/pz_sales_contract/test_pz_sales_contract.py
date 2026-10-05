@@ -1245,9 +1245,13 @@ class TestPZSalesContract(IntegrationTestCase):
         p.save().submit()
         p.db_set('clearance_date',today())
         self.assertEqual(payment_status(d).confirmed,0)
-        invalid=frappe.copy_doc(d)
-        invalid.docstatus=0
-        invalid.bank_receiving_account='PZ Synthetic Cash - PZT'
+        # Bank instructions are text, but naming a Cash ledger there does not
+        # nominate it as the agreed cash account or qualify a cash receipt.
+        text_bank = contract(submit=True, bank_receiving_account='PZ Synthetic Cash - PZT',
+            cash_receiving_account=None)
+        receipt(text_bank, 300, cash=True)
+        self.assertEqual(payment_status(text_bank).confirmed, 0)
+        invalid = contract(insert=False, cash_receiving_account='PZ Synthetic Bank - PZT')
         with self.assertRaises(frappe.ValidationError):
             invalid.insert()
 
