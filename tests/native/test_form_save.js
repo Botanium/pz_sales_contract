@@ -322,3 +322,21 @@ test("native party mandatory checks accept phone-only contact and block missing 
   assert.equal(ui.saves.length, 1);
   assert.equal(ui.saves[0].buyer_email_phone, "00971 505 65 1305");
 });
+
+
+test("native Save permits optional buyer details blank but still requires primary phone", async () => {
+  const ui = nativeDesk(); await ui.setup(); await ui.frm.refresh(); await flush(); await ui.respond({});
+  ui.frm.doc.customer_tax_id = null;
+  ui.frm.doc.buyer_email_phone = "";
+  assert.equal(ui.frm.fields_dict.customer_tax_id.df.reqd, false);
+  assert.equal(ui.frm.fields_dict.buyer_email_phone.df.reqd, false);
+  assert.equal(ui.frappe.ui.form.check_mandatory(ui.frm), true);
+  ui.frm.doc.buyer_phone = "";
+  await ui.save();
+  assert.equal(ui.saves.length, 0);
+  ui.frm.doc.buyer_phone = "0012345678";
+  await ui.save();
+  assert.equal(ui.saves.length, 1);
+  assert.equal(ui.saves[0].customer_tax_id, null);
+  assert.equal(ui.saves[0].buyer_email_phone, "");
+});

@@ -154,7 +154,7 @@
       "fieldname": "customer_tax_id",
       "label": "Registration / tax / ID",
       "fieldtype": "Data",
-      "mandatory_depends_on": "eval:doc.party_entry_version === 'direct-v1' || (doc.__islocal && !doc.amended_from)"
+      "description": "Optional registration, tax number or other ID."
     },
     {
       "fieldname": "customer_address",
@@ -690,8 +690,7 @@
       "fieldname": "buyer_email_phone",
       "label": "Email / phone",
       "fieldtype": "Data",
-      "mandatory_depends_on": "eval:doc.party_entry_version === 'direct-v1' || (doc.__islocal && !doc.amended_from)",
-      "description": "Enter an email address or phone number; a phone number alone is accepted."
+      "description": "Optional additional email address or phone number. The primary Buyer phone is still required."
     },
     {
       "fieldname": "party_entry_version",

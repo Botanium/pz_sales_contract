@@ -1542,3 +1542,22 @@ class TestPZSalesContract(IntegrationTestCase):
         doc.contact_display = 'Explicit historical representative correction'
         doc.save()
         self.assertEqual(doc.contact_person, contact_person)
+
+
+    def test_optional_buyer_details_save_and_print_cleanly_without_weakening_primary_phone(self):
+        from bs4 import BeautifulSoup
+        doc = contract(customer_tax_id=None, buyer_email_phone='')
+        doc.save()
+        html = frappe.get_print(doc.doctype, doc.name, print_format='Standard')
+        buyer = BeautifulSoup(html, 'html.parser').select_one('table.details tr td:nth-of-type(2)').get_text()
+        self.assertNotIn('Registration / tax / ID:', buyer)
+        self.assertNotIn('Email / phone:', buyer)
+        self.assertNotIn('Not recorded', buyer)
+        self.assertNotIn('None', buyer)
+        self.assertIn(doc.buyer_phone, buyer)
+        doc.buyer_phone = ''
+        with self.assertRaisesRegex(frappe.MandatoryError, 'Buyer phone'):
+            doc.save()
+        doc.reload()
+        doc.submit()
+        self.assertEqual(frappe.db.get_value('Sales Order', doc.sales_order, 'docstatus'), 0)

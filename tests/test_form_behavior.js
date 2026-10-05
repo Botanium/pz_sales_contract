@@ -609,7 +609,7 @@ test("direct party defaults remain editable and buyer fields never use ERP looku
   assert.equal(ui.frm.doc.seller_name, "Explicit Seller");
   assert.equal(ui.frm.doc.seller_address_display, "Arbat-Sulaimani, Iraq");
   assert.equal(ui.frm.doc.seller_phone, "00964 770 000 3737");
-  assert.equal(ui.fieldProperties["buyer_email_phone.reqd"], true);
+  assert.equal(ui.fieldProperties["buyer_email_phone.reqd"], false);
   assert.equal(ui.queries.customer_address, undefined);
   assert.equal(ui.queries.contact_person, undefined);
   ui.frm.doc.seller_email = "Edited seller contact";

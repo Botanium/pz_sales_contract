@@ -53,3 +53,17 @@ class TestPartyEntry(unittest.TestCase):
         self.assertEqual(order.index('buyer_position'), order.index('contact_display') + 1)
         self.assertEqual(order.count('buyer_position'), 1)
         self.assertNotIn('TRANSOCEANGROUP.CO', json.dumps(schema))
+
+
+    def test_optional_buyer_details_allow_blank_but_primary_phone_remains_required(self):
+        doc = Doc({field: 'Entered value' for field in self.party.PARTY_REQUIRED_FIELDS},
+            party_entry_version='direct-v1', customer_tax_id=None, buyer_email_phone='')
+        self.party.validate_party_fields(doc)
+        doc['buyer_phone'] = ''
+        with self.assertRaisesRegex(ValueError, 'Buyer phone'):
+            self.party.validate_party_fields(doc)
+        schema = json.loads((ROOT / 'pz_sales_contract/sales_contracts/doctype/pz_sales_contract/pz_sales_contract.json').read_text())
+        fields = {field['fieldname']: field for field in schema['fields']}
+        for field in ('customer_tax_id', 'buyer_email_phone'):
+            self.assertFalse(fields[field].get('reqd'))
+            self.assertFalse(fields[field].get('mandatory_depends_on'))

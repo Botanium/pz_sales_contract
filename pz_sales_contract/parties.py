@@ -15,12 +15,10 @@ PARTY_REQUIRED_FIELDS = {
     'seller_email': 'Seller email',
     'seller_phone': 'Seller phone',
     'customer_name': 'Customer legal name',
-    'customer_tax_id': 'Registration / tax / ID',
     'address_display': 'Buyer address',
     'buyer_phone': 'Buyer phone',
     'contact_display': 'Buyer representative / signatory name',
     'buyer_position': 'Buyer signatory position',
-    'buyer_email_phone': 'Buyer email / phone',
 }
 
 

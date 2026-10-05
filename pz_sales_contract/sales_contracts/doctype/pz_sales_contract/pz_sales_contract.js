@@ -1,8 +1,8 @@
 const defaultContractIncoterms = ["EXW", "FOB", "CIF"];
 const contractChildLookupStates = new WeakMap();
 const partyFields = ["seller_name", "seller_address_display", "seller_email", "seller_phone",
-  "customer_name", "customer_tax_id", "address_display", "buyer_phone", "contact_display",
-  "buyer_position", "buyer_email_phone"];
+  "customer_name", "address_display", "buyer_phone", "contact_display",
+  "buyer_position"];
 const sellerTextDefaults = { seller_name: "Petrol Zone Company", seller_address_display: "Arbat-Sulaimani, Iraq",
   seller_email: "info@petrol-zone.com", seller_phone: "00964 770 000 3737" };
 function usesDirectParties(frm) {
@@ -575,6 +575,7 @@ frappe.ui.form.on("PZ Sales Contract", {
   refresh(frm) {
     ensureCompanyDefaultsDocument(frm);
     const directParties = usesDirectParties(frm);
+    for (const field of ["customer_tax_id", "buyer_email_phone"]) frm.set_df_property(field, "reqd", false);
     for (const field of partyFields) frm.set_df_property(field, "reqd", directParties || field === "buyer_position");
     if (frm.is_new() && !frm.doc.amended_from && frm._pzPartyDefaultsDoc !== frm.doc) {
       frm._pzPartyDefaultsDoc = frm.doc;
