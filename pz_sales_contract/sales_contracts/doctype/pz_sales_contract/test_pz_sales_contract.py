@@ -53,6 +53,12 @@ class TestPZSalesContract(IntegrationTestCase):
         doc.contact_person = frappe.db.get_value('Dynamic Link',
             dict(parenttype='Contact', link_doctype='Customer', link_name=doc.customer), 'parent')
         doc.seller_address = 'PZ Synthetic Seller-Billing'
+        if not doc.is_new():
+            # Emulate a stored pre-cutover record, including its internal links.
+            frappe.db.set_value(doc.doctype, doc.name, dict(party_entry_version=None,
+                customer_address=doc.customer_address, contact_person=doc.contact_person,
+                seller_address=doc.seller_address))
+            doc.reload()
         for fieldname, value in {
             'delivery_date': today(),
             'delivery_arrangement': 'Synthetic agreed delivery arrangement',
@@ -150,7 +156,7 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertEqual(frappe.db.get_value('Sales Order',d.sales_order,'named_place'),d.named_place)
         self.assertEqual(d.items[0].item_name,'Synthetic Bitumen')
         self.assertIn('Nine Hundred only',d.in_words)
-        self.assertIn('Synthetic customer',d.address_display)
+        self.assertEqual('Synthetic buyer address',d.address_display)
         self.assertEqual(frappe.db.get_value('Sales Order Item',
             {'parent': d.sales_order, 'idx': 1}, 'custom_bitumen_grade'), d.items[0].grade_master)
 
@@ -1452,7 +1458,7 @@ class TestPZSalesContract(IntegrationTestCase):
             doc.set(field, '   ')
             with self.assertRaises(frappe.MandatoryError, msg=field):
                 doc.save()
-            doc.set(field, saved)
+            doc.reload()
         doc.save()
         html = frappe.get_print(doc.doctype, doc.name, print_format='Standard')
         self.assertIn('Entered Buyer &lt;legal&gt;', html)
@@ -1478,6 +1484,7 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertEqual({field: doc.get(field) for field in recorded}, recorded)
         doc.cancel()
         amendment = frappe.copy_doc(doc)
+        amendment.docstatus = 0
         amendment.amended_from = doc.name
         amendment.insert()
         self.assertEqual(amendment.party_entry_version, 'direct-v1')
