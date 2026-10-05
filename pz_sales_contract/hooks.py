@@ -18,3 +18,6 @@ doc_events = {
 }
 pdf_header_html = "pz_sales_contract.printing.pdf_header_html"
 pdf_footer_html = "pz_sales_contract.printing.pdf_header_html"
+
+# Available even when another app owns the final pdf_body_html hook.
+jinja = {"methods": ["pz_sales_contract.printing.get_contract_print_context"]}

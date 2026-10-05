@@ -1,3 +1,16 @@
+{% set contract_context = get_contract_print_context(doc) %}
+{% set doc = contract_context.doc %}
+{% set state = contract_context.state %}
+{% set holiday = contract_context.holiday %}
+{% set spec_items = contract_context.spec_items %}
+{% set is_item_only_draft = contract_context.is_item_only_draft %}
+{% set simple_print = contract_context.simple_print %}
+{% set sales_order_status = contract_context.sales_order_status %}
+{% set format_money = contract_context.format_money %}
+{% set clauses = contract_context.clauses %}
+{% set logo = contract_context.logo %}
+{% set erp_status = contract_context.erp_status %}
+{% set payment_instructions = contract_context.payment_instructions %}
 {% macro payment_table() %}
 {% if payment_instructions %}<h2>Payment Instructions</h2>
 <table class="schedule"><thead><tr><th style="width:31%">Payment detail</th><th>Agreed instructions</th></tr></thead><tbody>{% for label,value in payment_instructions %}<tr><td>{{ label|e }}</td><td>{{ value|e }}</td></tr>{% endfor %}</tbody></table>
