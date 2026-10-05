@@ -354,3 +354,17 @@ test("native Save permits empty optional payment instructions and free-text bank
   assert.equal(ui.saves.length, 1);
   assert.equal(ui.saves[0].bank_receiving_account, "Synthetic unlinked bank text");
 });
+
+
+test("native Save preserves all optional payment fields cleared before defaults arrive", async () => {
+  const ui = nativeDesk();
+  const fields = ["bank_receiving_account", "cash_receiving_account", "beneficiary", "bank_branch", "account_iban", "swift_reference"];
+  for (const field of fields) ui.frm.doc[field] = `Initial ${field}`;
+  await ui.setup();
+  await ui.frm.refresh(); await flush();
+  for (const field of fields) await ui.frm.set_value(field, "");
+  await ui.respond({ currency: "USD", ...Object.fromEntries(fields.map(field => [field, `Configured ${field}`])) });
+  await ui.save();
+  assert.equal(ui.saves.length, 1);
+  for (const field of fields) assert.equal(ui.saves[0][field], "", field);
+});

@@ -54,6 +54,7 @@ const currencyDependentDefaultFields = [
 ];
 
 const bankInstructionDefaultFields = ["beneficiary", "bank_branch", "account_iban", "swift_reference"];
+const optionalPaymentFields = ["bank_receiving_account", "cash_receiving_account", ...bankInstructionDefaultFields];
 
 function ensureCompanyDefaultsDocument(frm) {
   // Desk reuses one Form, including when revisiting cached unsaved documents.
@@ -395,6 +396,9 @@ function loadCompanyDefaults(frm, expectedCompany, requestId) {
           }
           for (const fieldname of companyDefaultFields) {
             if (fieldname === "seller_address") continue;
+            // A user-cleared optional field must survive a late defaults response.
+            if (optionalPaymentFields.includes(fieldname)
+              && frm._pzCompanyDefaultTouchedFields.has(fieldname)) continue;
             if (usesUsdEntry(frm) && ["currency", "conversion_rate", "selling_price_list"].includes(fieldname)) continue;
             const dependent = currencyDependentDefaultFields.includes(fieldname);
             const replaceFrameworkDefault = dependent && frm._pzCompanyDefaultsHasCurrencyDependentDefaults
@@ -569,7 +573,7 @@ frappe.ui.form.on("PZ Sales Contract", {
   refresh(frm) {
     ensureCompanyDefaultsDocument(frm);
     const directParties = usesDirectParties(frm);
-    for (const field of ["customer_tax_id", "buyer_email_phone", "bank_receiving_account", "cash_receiving_account", "beneficiary", "bank_branch", "account_iban", "swift_reference"]) frm.set_df_property(field, "reqd", false);
+    for (const field of ["customer_tax_id", "buyer_email_phone", ...optionalPaymentFields]) frm.set_df_property(field, "reqd", false);
     for (const field of partyFields) frm.set_df_property(field, "reqd", directParties || field === "buyer_position");
     if (frm.is_new() && !frm.doc.amended_from && frm._pzPartyDefaultsDoc !== frm.doc) {
       frm._pzPartyDefaultsDoc = frm.doc;
