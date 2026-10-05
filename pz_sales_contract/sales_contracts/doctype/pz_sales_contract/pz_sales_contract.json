@@ -31,19 +31,21 @@
     "named_place",
     "specs",
     "specifications",
+    "seller_details",
+    "seller_name",
+    "seller_address_display",
+    "seller_email",
+    "seller_phone",
+    "seller_signatory",
+    "seller_position",
     "customer_details",
     "customer_name",
     "customer_tax_id",
-    "customer_address",
     "address_display",
-    "contact_person",
+    "buyer_phone",
     "contact_display",
-    "seller_details",
-    "seller_address",
-    "seller_address_display",
-    "seller_signatory",
-    "seller_position",
     "buyer_position",
+    "buyer_email_phone",
     "delivery_terms",
     "delivery_arrangement",
     "transport_responsibility",
@@ -89,7 +91,11 @@
     "terms_version",
     "contract_scope_version",
     "cancelled_sales_order_reference",
-    "entry_policy_version"
+    "entry_policy_version",
+    "customer_address",
+    "contact_person",
+    "seller_address",
+    "party_entry_version"
   ],
   "fields": [
     {
@@ -104,20 +110,21 @@
     },
     {
       "fieldname": "customer",
-      "label": "Customer",
+      "label": "ERP Customer",
       "fieldtype": "Link",
       "options": "Customer",
       "reqd": 1,
-      "in_list_view": 1
+      "in_list_view": 1,
+      "description": "Internal customer identity used for orders and payment history. Enter the printed buyer details below."
     },
     {
       "fieldname": "company",
-      "label": "Seller company",
+      "label": "ERP seller Company",
       "fieldtype": "Link",
       "options": "Company",
       "reqd": 1,
       "in_list_view": 1,
-      "description": "Choose the seller. Optional Company Contract Defaults fill seller and USD receiving-account details."
+      "description": "Internal accounting identity. Enter the printed seller details below."
     },
     {
       "fieldname": "transaction_date",
@@ -135,65 +142,66 @@
     {
       "fieldname": "customer_details",
       "label": "Buyer details",
-      "fieldtype": "Section Break",
-      "collapsible": 1
+      "fieldtype": "Section Break"
     },
     {
       "fieldname": "customer_name",
       "label": "Customer legal name",
       "fieldtype": "Data",
-      "read_only": 1
+      "mandatory_depends_on": "eval:doc.party_entry_version === 'direct-v1' || (doc.__islocal && !doc.amended_from)"
     },
     {
       "fieldname": "customer_tax_id",
-      "label": "Customer registration / tax ID",
+      "label": "Registration / tax / ID",
       "fieldtype": "Data",
-      "read_only": 1
+      "mandatory_depends_on": "eval:doc.party_entry_version === 'direct-v1' || (doc.__islocal && !doc.amended_from)"
     },
     {
       "fieldname": "customer_address",
       "label": "Customer address",
       "fieldtype": "Link",
       "options": "Address",
-      "reqd": 1
+      "hidden": 1,
+      "read_only": 1
     },
     {
       "fieldname": "address_display",
-      "label": "Address snapshot",
+      "label": "Buyer address",
       "fieldtype": "Small Text",
-      "read_only": 1
+      "mandatory_depends_on": "eval:doc.party_entry_version === 'direct-v1' || (doc.__islocal && !doc.amended_from)"
     },
     {
       "fieldname": "contact_person",
       "label": "Buyer contact",
       "fieldtype": "Link",
       "options": "Contact",
-      "reqd": 1
+      "hidden": 1,
+      "read_only": 1
     },
     {
       "fieldname": "contact_display",
-      "label": "Buyer representative / title / email / phone",
+      "label": "Buyer representative / signatory name",
       "fieldtype": "Small Text",
-      "read_only": 1
+      "mandatory_depends_on": "eval:doc.party_entry_version === 'direct-v1' || (doc.__islocal && !doc.amended_from)"
     },
     {
       "fieldname": "seller_details",
       "label": "Seller details",
-      "fieldtype": "Section Break",
-      "collapsible": 1
+      "fieldtype": "Section Break"
     },
     {
       "fieldname": "seller_address",
       "label": "Seller address",
       "fieldtype": "Link",
       "options": "Address",
-      "reqd": 1
+      "hidden": 1,
+      "read_only": 1
     },
     {
       "fieldname": "seller_address_display",
-      "label": "Seller address snapshot",
+      "label": "Seller address",
       "fieldtype": "Small Text",
-      "read_only": 1
+      "mandatory_depends_on": "eval:doc.party_entry_version === 'direct-v1' || (doc.__islocal && !doc.amended_from)"
     },
     {
       "fieldname": "seller_signatory",
@@ -211,7 +219,8 @@
       "fieldname": "buyer_position",
       "label": "Buyer signatory position",
       "fieldtype": "Data",
-      "reqd": 1
+      "reqd": 1,
+      "mandatory_depends_on": "eval:doc.party_entry_version === 'direct-v1' || (doc.__islocal && !doc.amended_from)"
     },
     {
       "fieldname": "commercial",
@@ -649,6 +658,43 @@
     {
       "fieldname": "entry_policy_version",
       "label": "Entry policy version (internal)",
+      "fieldtype": "Data",
+      "hidden": 1,
+      "read_only": 1
+    },
+    {
+      "fieldname": "seller_name",
+      "label": "Seller legal name",
+      "fieldtype": "Data",
+      "mandatory_depends_on": "eval:doc.party_entry_version === 'direct-v1' || (doc.__islocal && !doc.amended_from)"
+    },
+    {
+      "fieldname": "seller_email",
+      "label": "Seller email",
+      "fieldtype": "Data",
+      "mandatory_depends_on": "eval:doc.party_entry_version === 'direct-v1' || (doc.__islocal && !doc.amended_from)"
+    },
+    {
+      "fieldname": "seller_phone",
+      "label": "Seller phone",
+      "fieldtype": "Data",
+      "mandatory_depends_on": "eval:doc.party_entry_version === 'direct-v1' || (doc.__islocal && !doc.amended_from)"
+    },
+    {
+      "fieldname": "buyer_phone",
+      "label": "Buyer phone",
+      "fieldtype": "Data",
+      "mandatory_depends_on": "eval:doc.party_entry_version === 'direct-v1' || (doc.__islocal && !doc.amended_from)"
+    },
+    {
+      "fieldname": "buyer_email_phone",
+      "label": "Email / phone",
+      "fieldtype": "Data",
+      "mandatory_depends_on": "eval:doc.party_entry_version === 'direct-v1' || (doc.__islocal && !doc.amended_from)",
+      "description": "Enter an email address or phone number; a phone number alone is accepted."
+    },
+    {
+      "fieldname": "party_entry_version",
       "fieldtype": "Data",
       "hidden": 1,
       "read_only": 1

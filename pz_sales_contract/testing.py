@@ -178,6 +178,9 @@ def contract(customer=None, submit=False, insert=True, submit_sales_order=True, 
         address=frappe.get_doc('Address',frappe.db.get_value('Dynamic Link',dict(parenttype='Address',link_doctype='Customer',link_name=customer),'parent'))
         contact=frappe.get_doc('Contact',frappe.db.get_value('Dynamic Link',dict(parenttype='Contact',link_doctype='Customer',link_name=customer),'parent'))
     d=dict(doctype='PZ Sales Contract',customer=customer,company=COMPANY,
+        customer_name='Synthetic Buyer Legal Name', customer_tax_id='SYNTHETIC-ID',
+        address_display='Synthetic buyer address', buyer_phone='0000000000',
+        contact_display='Synthetic Buyer Representative', buyer_email_phone='0000000000',
         transaction_date=today(),currency='USD',conversion_rate=1,
         selling_price_list='PZ Synthetic USD',customer_address=address.name,contact_person=contact.name,
         seller_address='PZ Synthetic Seller-Billing',seller_signatory='Synthetic Seller',seller_position='Test manager',buyer_position='Test buyer',

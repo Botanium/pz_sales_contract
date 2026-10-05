@@ -5,6 +5,9 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import getdate
 
+from pz_sales_contract.parties import (
+    PARTY_ENTRY_VERSION, PARTY_LINK_FIELDS, SELLER_DEFAULTS, uses_direct_parties, validate_party_fields,
+)
 from pz_sales_contract.calendar import add_open_hours, schedule
 from pz_sales_contract.contract_terms import CURRENT_TERMS_VERSION, snapshot_for_new_contract
 from pz_sales_contract.entry_policy import (
@@ -97,7 +100,14 @@ class PZSalesContract(Document):
                 if value in (None, '') or (fieldname == 'conversion_rate' and value == 0):
                     initially_blank_currency_dependent.add(fieldname)
 
+        party_input = {field: self.get(field) for field in SELLER_DEFAULTS}
         super()._set_defaults()
+        if new_family:
+            for field, default in SELLER_DEFAULTS.items():
+                self.set(field, party_input[field] if party_input[field] not in (None, '') else default)
+        if new_family or uses_direct_parties(self):
+            for field in PARTY_LINK_FIELDS:
+                self.set(field, None)
         if new_family:
             self.currency = 'USD'
             # These hidden values are resolved server-side after seller defaults.
@@ -138,12 +148,14 @@ class PZSalesContract(Document):
             # without a version stays on its historical print layout.
             self.terms_version = original.get('terms_version')
             self.entry_policy_version = original.get('entry_policy_version')
+            self.party_entry_version = original.get('party_entry_version')
         else:
             original = None
             self.first_family = frappe.generate_hash(length=20)
             self.contract_scope_version = ITEM_ONLY_DRAFT_SO_SCOPE
             self.terms_version = CURRENT_TERMS_VERSION
             self.entry_policy_version = ENTRY_POLICY_VERSION
+            self.party_entry_version = PARTY_ENTRY_VERSION
             # New v2 families never accept hidden legacy schedule data through
             # Desk defaults, imports, or REST payloads.
             self._clear_historical_contract_fields()
@@ -247,6 +259,8 @@ class PZSalesContract(Document):
             or 'bank_receiving_account' in initially_blank
         )
         for fieldname in COMPANY_DEFAULT_FIELDS:
+            if fieldname == 'seller_address':
+                continue
             if fieldname in CURRENCY_DEPENDENT_DEFAULT_FIELDS:
                 if not configured_bundle:
                     continue
@@ -281,7 +295,7 @@ class PZSalesContract(Document):
     def validate(self):
         old = self.get_doc_before_save()
         if old:
-            for key in ['customer', 'company', 'first_family', 'sales_order', 'amended_from', 'contract_scope_version', 'terms_version', 'entry_policy_version']:
+            for key in ['customer', 'company', 'first_family', 'sales_order', 'amended_from', 'contract_scope_version', 'terms_version', 'entry_policy_version', 'party_entry_version']:
                 if self.get(key) != old.get(key):
                     frappe.throw(f'{key} cannot be changed after creation')
             if self.terms_snapshot != old.terms_snapshot:
@@ -302,6 +316,7 @@ class PZSalesContract(Document):
         if not entry_source and self.amended_from:
             entry_source = frappe.get_doc(self.doctype, self.amended_from)
             entry_source.check_permission('read')
+        validate_party_fields(self)
         apply_usd_policy(self, entry_source)
         validate_location(self, entry_source)
         self.validate_specifications()
@@ -342,21 +357,22 @@ class PZSalesContract(Document):
         customer.check_permission('read')
         if customer.disabled:
             frappe.throw('Disabled customers cannot receive contracts')
-        self.customer_name, self.customer_tax_id = customer.customer_name, customer.tax_id
-        for key, doctype, parenttype, parent in [
-            ('customer_address', 'Address', 'Customer', self.customer),
-            ('seller_address', 'Address', 'Company', self.company),
-            ('contact_person', 'Contact', 'Customer', self.customer)]:
-            linked = frappe.get_doc(doctype, self.get(key))
-            linked.check_permission('read')
-            if not any(link.link_doctype == parenttype and link.link_name == parent for link in linked.links):
-                frappe.throw(f'{key} must belong to the selected {parenttype}')
-            if doctype == 'Address':
-                snapshot = ', '.join(str(linked.get(k)) for k in ['address_line1','address_line2','city','state','pincode','country'] if linked.get(k))
-                self.set('address_display' if parenttype == 'Customer' else 'seller_address_display', snapshot)
-            else:
-                self.contact_display = ' / '.join(str(v) for v in [linked.full_name, linked.designation,
-                    linked.email_id, linked.mobile_no or linked.phone] if v)
+        if not uses_direct_parties(self) and not old and not self.amended_from:
+            self.customer_name, self.customer_tax_id = customer.customer_name, customer.tax_id
+            for key, doctype, parenttype, parent in [
+                ('customer_address', 'Address', 'Customer', self.customer),
+                ('seller_address', 'Address', 'Company', self.company),
+                ('contact_person', 'Contact', 'Customer', self.customer)]:
+                linked = frappe.get_doc(doctype, self.get(key))
+                linked.check_permission('read')
+                if not any(link.link_doctype == parenttype and link.link_name == parent for link in linked.links):
+                    frappe.throw(f'{key} must belong to the selected {parenttype}')
+                if doctype == 'Address':
+                    snapshot = ', '.join(str(linked.get(k)) for k in ['address_line1','address_line2','city','state','pincode','country'] if linked.get(k))
+                    self.set('address_display' if parenttype == 'Customer' else 'seller_address_display', snapshot)
+                else:
+                    self.contact_display = ' / '.join(str(v) for v in [linked.full_name, linked.designation,
+                        linked.email_id, linked.mobile_no or linked.phone] if v)
         frappe.get_doc('Company', self.company).check_permission('read')
         currency = frappe.db.get_value('Company', self.company, 'default_currency')
         if not self.conversion_rate or self.conversion_rate <= 0 or (currency == self.currency and self.conversion_rate != 1):
@@ -538,6 +554,8 @@ class PZSalesContract(Document):
         order = frappe.new_doc('Sales Order')
         fields = ['customer','company','transaction_date','currency','conversion_rate',
                   'selling_price_list','customer_address','contact_person','incoterm']
+        if uses_direct_parties(self):
+            fields = [key for key in fields if key not in PARTY_LINK_FIELDS]
         if not self.uses_item_only_draft_order():
             fields.insert(3, 'delivery_date')
         for key in fields:
@@ -637,6 +655,8 @@ def validate_item_only_sales_order_before_submit(doc, method=None):
         'customer', 'company', 'transaction_date', 'currency', 'conversion_rate',
         'selling_price_list', 'customer_address', 'contact_person', 'incoterm', 'named_place',
     )
+    if uses_direct_parties(contract):
+        immutable_fields = tuple(key for key in immutable_fields if key not in PARTY_LINK_FIELDS)
     for fieldname in immutable_fields:
         if doc.get(fieldname) != contract.get(fieldname):
             frappe.throw(f'Sales Order {fieldname} must match the linked contract')

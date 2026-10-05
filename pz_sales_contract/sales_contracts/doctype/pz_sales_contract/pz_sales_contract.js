@@ -1,5 +1,13 @@
 const defaultContractIncoterms = ["EXW", "FOB", "CIF"];
 const contractChildLookupStates = new WeakMap();
+const partyFields = ["seller_name", "seller_address_display", "seller_email", "seller_phone",
+  "customer_name", "customer_tax_id", "address_display", "buyer_phone", "contact_display",
+  "buyer_position", "buyer_email_phone"];
+const sellerTextDefaults = { seller_name: "Petrol Zone Company", seller_address_display: "Arbat-Sulaimani, Iraq",
+  seller_email: "info@petrol-zone.com", seller_phone: "00964 770 000 3737" };
+function usesDirectParties(frm) {
+  return frm.doc.party_entry_version === "direct-v1" || (frm.is_new() && !frm.doc.amended_from);
+}
 
 function usesUsdEntry(frm) {
   return frm.doc.entry_policy_version === "usd-location-v1" || (frm.is_new() && !frm.doc.amended_from);
@@ -149,11 +157,8 @@ const requiredChecklistGroups = [
   },
   {
     label: "Buyer and seller details",
-    firstField: "customer_address",
+    firstField: "customer_name",
     fields: [
-      "customer_address",
-      "contact_person",
-      "seller_address",
       "seller_signatory",
       "seller_position",
       "buyer_position",
@@ -270,6 +275,7 @@ function missingItemFields(row, historicGradeAllowed) {
 function checklistStatus(doc, group) {
   const newEntry = doc.entry_policy_version === "usd-location-v1" || (doc.__islocal && !doc.amended_from);
   let fields = group.fields || [];
+  if (group.firstField === "customer_name" && (doc.party_entry_version === "direct-v1" || (doc.__islocal && !doc.amended_from))) fields = [...fields, ...partyFields];
   if (newEntry) fields = fields.filter((fieldname) => !["conversion_rate", "selling_price_list", "named_place"].includes(fieldname));
   if (newEntry && group.firstField === "incoterm") fields = [...fields, "contract_location"];
   let missing = fields.filter((fieldname) => isMissingValue(fieldname, doc[fieldname])).length;
@@ -393,6 +399,7 @@ function loadCompanyDefaults(frm, expectedCompany, requestId) {
             showCompanyCurrencyMismatch(configured.currency, frm.doc.currency);
           }
           for (const fieldname of companyDefaultFields) {
+            if (fieldname === "seller_address") continue;
             if (usesUsdEntry(frm) && ["currency", "conversion_rate", "selling_price_list"].includes(fieldname)) continue;
             const dependent = currencyDependentDefaultFields.includes(fieldname);
             const replaceFrameworkDefault = dependent && frm._pzCompanyDefaultsHasCurrencyDependentDefaults
@@ -462,7 +469,7 @@ function clearCompanySpecificValues(frm) {
   ensureCompanyDefaultsDocument(frm);
   if (!frm.is_new() || frm.doc.amended_from) return;
   const doc = frm.doc;
-  const clear = Object.fromEntries([...companyDefaultFields, "seller_address_display"]
+  const clear = Object.fromEntries([...companyDefaultFields]
     .filter((fieldname) => !(usesUsdEntry(frm) && fieldname === "currency"))
     .map((fieldname) => [fieldname, null]));
   frm._pzCompanyDefaultsPendingClear = {
@@ -537,9 +544,6 @@ frappe.ui.form.on("PZ Sales Contract", {
   ...registerChecklistEvents(),
   setup(frm) {
     ensureCompanyDefaultsDocument(frm);
-    frm.set_query("customer_address", () => ({ query: "frappe.contacts.doctype.address.address.address_query", filters: { link_doctype: "Customer", link_name: frm.doc.customer } }));
-    frm.set_query("seller_address", () => ({ query: "frappe.contacts.doctype.address.address.address_query", filters: { link_doctype: "Company", link_name: frm.doc.company } }));
-    frm.set_query("contact_person", () => ({ query: "frappe.contacts.doctype.contact.contact.contact_query", filters: { link_doctype: "Customer", link_name: frm.doc.customer } }));
     frm.set_query("incoterm", () => ({ filters: { name: ["in", [...new Set([
       ...(frm._pzContractIncoterms || defaultContractIncoterms),
       ...((!frm.is_new() || frm.doc.amended_from) && frm.doc.incoterm ? [frm.doc.incoterm] : []),
@@ -570,6 +574,13 @@ frappe.ui.form.on("PZ Sales Contract", {
   },
   refresh(frm) {
     ensureCompanyDefaultsDocument(frm);
+    const directParties = usesDirectParties(frm);
+    for (const field of partyFields) frm.set_df_property(field, "reqd", directParties || field === "buyer_position");
+    if (frm.is_new() && !frm.doc.amended_from && frm._pzPartyDefaultsDoc !== frm.doc) {
+      frm._pzPartyDefaultsDoc = frm.doc;
+      const values = Object.fromEntries(Object.entries(sellerTextDefaults).filter(([field]) => !frm.doc[field]));
+      frm.set_value(values);
+    }
     const usdEntry = usesUsdEntry(frm);
     frm.set_df_property("currency", "read_only", usdEntry);
     for (const fieldname of ["conversion_rate", "selling_price_list", "named_place"]) {
@@ -618,7 +629,10 @@ frappe.ui.form.on("PZ Sales Contract", {
     });
   },
   customer(frm) {
-    frm.set_value({ customer_address: null, contact_person: null });
+    if (frm.is_new() && !frm.doc.amended_from) {
+      frm.set_value(Object.fromEntries(["customer_name", "customer_tax_id", "address_display", "buyer_phone",
+        "contact_display", "buyer_position", "buyer_email_phone"].map((field) => [field, null])));
+    }
     renderDailyChecklist(frm);
   },
   company(frm) {

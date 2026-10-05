@@ -398,7 +398,7 @@ test("returning completes a Company change before loading the new seller default
   };
   assert.equal(ui.requests.at(-1).args.company, "Another Seller");
   await ui.respond(ui.requests.length - 1, nextProfile);
-  for (const field of ["seller_address", "seller_signatory", "seller_position", "bank_receiving_account"])
+  for (const field of ["seller_signatory", "seller_position", "bank_receiving_account"])
     assert.equal(first[field], nextProfile[field], field);
   assert.equal(second.seller_signatory, undefined);
 });
@@ -453,7 +453,7 @@ for (const editTiming of ["before resuming", "during resumed field events"]) {
       ...profile, seller_address: "Address B", seller_signatory: "Signer B",
       seller_position: "Law B", bank_receiving_account: "Bank B", collection_grace: 24,
     });
-    assert.equal(first.seller_address, "Address B");
+    assert.equal(first.seller_address, null);
     assert.equal(first.seller_signatory, "Deal Signer");
     assert.equal(first.seller_position, profile.seller_position);
     assert.equal(first.bank_receiving_account, "Deal Bank");
@@ -600,4 +600,34 @@ test("returning during unfinished work preserves the save barrier without blocki
   finishEvent(); await flush();
   await ui.events.before_save(ui.frm);
   assert.equal(ui.frm._pzCompanyDefaultsWork.size, 0);
+});
+
+
+test("direct party defaults remain editable and buyer fields never use ERP lookups", async () => {
+  const ui = desk(newDoc("party-new", { seller_name: "Explicit Seller" }));
+  await ui.refresh();
+  assert.equal(ui.frm.doc.seller_name, "Explicit Seller");
+  assert.equal(ui.frm.doc.seller_address_display, "Arbat-Sulaimani, Iraq");
+  assert.equal(ui.frm.doc.seller_phone, "00964 770 000 3737");
+  assert.equal(ui.fieldProperties["buyer_email_phone.reqd"], true);
+  assert.equal(ui.queries.customer_address, undefined);
+  assert.equal(ui.queries.contact_person, undefined);
+  ui.frm.doc.seller_email = "Edited seller contact";
+  await ui.refresh();
+  assert.equal(ui.frm.doc.seller_email, "Edited seller contact");
+  ui.frm.doc.customer_name = "Prior Buyer";
+  ui.frm.doc.buyer_email_phone = "00971 505 65 1305";
+  await ui.frm.set_value("customer", "Next Customer");
+  await flush();
+  assert.equal(ui.frm.doc.customer_name, null);
+  assert.equal(ui.frm.doc.buyer_email_phone, null);
+});
+
+test("historical party snapshots get neither defaults nor new mandatory fields", async () => {
+  const ui = desk(newDoc("historical-party", { __islocal: 0, customer_name: "Saved Buyer", seller_address_display: "Saved Address" }));
+  await ui.refresh();
+  assert.equal(ui.frm.doc.customer_name, "Saved Buyer");
+  assert.equal(ui.frm.doc.seller_address_display, "Saved Address");
+  assert.equal(ui.frm.doc.seller_name, undefined);
+  assert.equal(ui.fieldProperties["buyer_email_phone.reqd"], false);
 });
