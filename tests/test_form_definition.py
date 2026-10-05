@@ -362,7 +362,7 @@ class TestContractFormDefinition(unittest.TestCase):
         self.assertLess(checklist_position, customer_position)
         self.assertLess(checklist_position, company_position)
         self.assertLess(checklist_position, currency_position)
-        self.assertIn("frm.set_value({ customer_address: null, contact_person: null });", source)
+        self.assertIn('"customer_name", "customer_tax_id", "address_display", "buyer_phone"', source)
         self.assertIn("clearCompanySpecificValues(frm)", source)
         self.assertIn("loadCompanyDefaults(frm, currentCompany)", source)
 

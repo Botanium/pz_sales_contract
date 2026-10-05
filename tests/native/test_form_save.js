@@ -99,7 +99,7 @@ function nativeDesk({ nativeRequests = false } = {}) {
       get_docfield: (dt, name) => schemas[dt].fields.find((field) => field.fieldname === name),
     },
     get_meta: (dt) => schemas[dt], get_route: () => [], route_history: [], route_hooks: {},
-    utils: { play_sound() {} },
+    utils: { play_sound() {}, eval(expression, data) { return vm.runInNewContext(expression, data); } },
     call(options) {
       if (options.method === "frappe.desk.form.save.savedocs") {
         saves.push(JSON.parse(JSON.stringify(options.args.doc)));
@@ -127,7 +127,7 @@ function nativeDesk({ nativeRequests = false } = {}) {
     doctype: schema.name, name: "new-contract", __islocal: 1,
     __unsaved: 1, docstatus: 0, company: "Company A",
   };
-  for (const field of schema.fields) if (field.reqd && !doc[field.fieldname]) {
+  for (const field of schema.fields) if ((field.reqd || field.mandatory_depends_on) && !doc[field.fieldname]) {
     doc[field.fieldname] = ["Float", "Currency"].includes(field.fieldtype) ? 1 : "Synthetic A";
   }
   Object.assign(doc, {
@@ -262,11 +262,11 @@ for (const result of ["empty", "failed"]) {
 
 test("native Save is blocked until a profile's asynchronous field application finishes", async () => {
   const ui = nativeDesk();
-  ui.frm.doc.seller_address = null;
+  ui.frm.doc.seller_signatory = null;
   await ui.setup(); await ui.frm.refresh(); await flush();
   ui.frappe.request.ajax_count = 1;
-  await ui.respond({ seller_address: "Profile Address A" });
-  assert.equal(ui.frm.doc.seller_address, "Profile Address A");
+  await ui.respond({ seller_signatory: "Profile Signer A" });
+  assert.equal(ui.frm.doc.seller_signatory, "Profile Signer A");
   assert.equal(ui.frappe.ui.form.check_mandatory(ui.frm), true);
   await ui.save();
   assert.equal(ui.saves.length, 0);
@@ -274,7 +274,7 @@ test("native Save is blocked until a profile's asynchronous field application fi
   assert.equal(ui.saves.length, 0);
   await ui.save();
   assert.equal(ui.saves.length, 1);
-  assert.equal(ui.saves[0].seller_address, "Profile Address A");
+  assert.equal(ui.saves[0].seller_signatory, "Profile Signer A");
 });
 
 for (const exception of ["QueryTimeoutError", "QueryDeadlockError"]) {
@@ -292,16 +292,33 @@ for (const exception of ["QueryTimeoutError", "QueryDeadlockError"]) {
 
 test("native request completion cannot release an ongoing successful defaults application", async () => {
   const ui = nativeDesk({ nativeRequests: true });
-  ui.frm.doc.seller_address = null;
+  ui.frm.doc.seller_signatory = null;
   await ui.setup(); ui.frm.refresh(); await flush();
   // Keep another native AJAX event outstanding after the defaults response.
   ui.frappe.request.ajax_count++;
-  await ui.transports[0].finish({ message: { seller_address: "Profile Address A" } });
+  await ui.transports[0].finish({ message: { seller_signatory: "Profile Signer A" } });
   assert.equal(ui.frappe.request.ajax_count, 1);
-  assert.equal(ui.frm.doc.seller_address, "Profile Address A");
+  assert.equal(ui.frm.doc.seller_signatory, "Profile Signer A");
   await ui.save();
   assert.equal(ui.saves.length, 0);
   await ui.releaseAjax();
   await ui.save();
   assert.equal(ui.saves.length, 1);
+});
+
+
+test("native party mandatory checks accept phone-only contact and block missing buyer details", async () => {
+  const ui = nativeDesk(); await ui.setup(); await ui.frm.refresh(); await flush(); await ui.respond({});
+  ui.frm.doc.buyer_email_phone = "00971 505 65 1305";
+  ui.frm.doc.customer_address = null;
+  ui.frm.doc.contact_person = null;
+  ui.frm.doc.seller_address = null;
+  assert.equal(ui.frappe.ui.form.check_mandatory(ui.frm), true);
+  ui.frm.doc.customer_name = "";
+  await ui.save();
+  assert.equal(ui.saves.length, 0);
+  ui.frm.doc.customer_name = "Entered Buyer";
+  await ui.save();
+  assert.equal(ui.saves.length, 1);
+  assert.equal(ui.saves[0].buyer_email_phone, "00971 505 65 1305");
 });

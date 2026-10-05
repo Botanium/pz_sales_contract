@@ -48,6 +48,17 @@ class TestPZSalesContract(IntegrationTestCase):
             frappe.delete_doc('PZ Contract Defaults', COMPANY, ignore_permissions=True)
 
     def complete_legacy_schedule(self, doc):
+        doc.customer_address = frappe.db.get_value('Dynamic Link',
+            dict(parenttype='Address', link_doctype='Customer', link_name=doc.customer), 'parent')
+        doc.contact_person = frappe.db.get_value('Dynamic Link',
+            dict(parenttype='Contact', link_doctype='Customer', link_name=doc.customer), 'parent')
+        doc.seller_address = 'PZ Synthetic Seller-Billing'
+        if not doc.is_new():
+            # Emulate a stored pre-cutover record, including its internal links.
+            frappe.db.set_value(doc.doctype, doc.name, dict(party_entry_version=None,
+                customer_address=doc.customer_address, contact_person=doc.contact_person,
+                seller_address=doc.seller_address))
+            doc.reload()
         for fieldname, value in {
             'delivery_date': today(),
             'delivery_arrangement': 'Synthetic agreed delivery arrangement',
@@ -145,7 +156,7 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertEqual(frappe.db.get_value('Sales Order',d.sales_order,'named_place'),d.named_place)
         self.assertEqual(d.items[0].item_name,'Synthetic Bitumen')
         self.assertIn('Nine Hundred only',d.in_words)
-        self.assertIn('Synthetic customer',d.address_display)
+        self.assertEqual('Synthetic buyer address',d.address_display)
         self.assertEqual(frappe.db.get_value('Sales Order Item',
             {'parent': d.sales_order, 'idx': 1}, 'custom_bitumen_grade'), d.items[0].grade_master)
 
@@ -243,6 +254,10 @@ class TestPZSalesContract(IntegrationTestCase):
         # schedule and specification data expected by the historical workflow.
         frappe.db.set_value(doc.doctype, doc.name, {
             'entry_policy_version': None,
+            'party_entry_version': None,
+            'customer_address': frappe.db.get_value('Dynamic Link', dict(parenttype='Address', link_doctype='Customer', link_name=doc.customer), 'parent'),
+            'contact_person': frappe.db.get_value('Dynamic Link', dict(parenttype='Contact', link_doctype='Customer', link_name=doc.customer), 'parent'),
+            'seller_address': 'PZ Synthetic Seller-Billing',
             'terms_version': None,
             'terms_snapshot': None,
             'contract_scope_version': None,
@@ -582,8 +597,8 @@ class TestPZSalesContract(IntegrationTestCase):
         frappe.db.savepoint('invalid_company_contract_defaults')
         bad_settings = self.synthetic_company_defaults().insert()
         bad_settings.db_set('seller_address', customer_address.name)
-        with self.assertRaises(frappe.ValidationError):
-            contract(customer=customer, seller_address=None)
+        direct = contract(customer=customer, seller_address=None)
+        self.assertIsNone(direct.seller_address)
         frappe.db.rollback(save_point='invalid_company_contract_defaults')
 
     def test_defaults_api_is_limited_to_contract_creators_and_company_scope(self):
@@ -1425,3 +1440,105 @@ class TestPZSalesContract(IntegrationTestCase):
         second.submit()
         registry=frappe.db.get_value('PZ Contract Registry',{'customer':order.customer},'established_history')
         self.assertEqual(registry,second.name)
+
+
+    def test_direct_parties_save_print_and_submit_without_contact_address_links(self):
+        from pz_sales_contract.parties import PARTY_REQUIRED_FIELDS
+        doc = contract(customer_address=None, contact_person=None, seller_address=None,
+            customer_name='Entered Buyer <legal>', customer_tax_id='Entered registration',
+            contact_display='Entered Representative', buyer_position='Director',
+            buyer_email_phone='00971 505 65 1305', seller_name='Edited Seller',
+            seller_address_display='Edited Seller Address', seller_email='seller@example.invalid',
+            seller_phone='0012345678')
+        self.assertEqual(doc.party_entry_version, 'direct-v1')
+        for field in ('customer_address', 'contact_person', 'seller_address'):
+            self.assertIsNone(doc.get(field))
+        for field in PARTY_REQUIRED_FIELDS:
+            saved = doc.get(field)
+            doc.set(field, '   ')
+            with self.assertRaises(frappe.MandatoryError, msg=field):
+                doc.save()
+            doc.reload()
+        doc.save()
+        html = frappe.get_print(doc.doctype, doc.name, print_format='Standard')
+        from bs4 import BeautifulSoup
+        printed = BeautifulSoup(html, 'html.parser')
+        # Native Data-field sanitization may normalize input markup on save.
+        # Compare the rendered text with the actual persisted snapshot.
+        self.assertIn(doc.customer_name, printed.get_text())
+        self.assertIsNone(printed.find('legal'))
+        for value in ['Entered registration', 'Entered Representative', 'Director',
+                '00971 505 65 1305', 'Edited Seller Address', 'seller@example.invalid', '0012345678']:
+            self.assertIn(value, html)
+        doc.submit()
+        order = frappe.get_doc('Sales Order', doc.sales_order)
+        self.assertEqual(order.customer, doc.customer)
+        self.assertEqual(order.company, doc.company)
+        self.assertEqual(order.docstatus, 0)
+        order.delivery_date = today()
+        for row in order.items:
+            row.delivery_date = today()
+        order.save().submit()
+
+    def test_direct_party_snapshots_survive_master_changes_and_amendments(self):
+        doc = contract(submit=True, submit_sales_order=False)
+        recorded = {field: doc.get(field) for field in ('customer_name', 'customer_tax_id',
+            'address_display', 'contact_display', 'seller_address_display')}
+        frappe.db.set_value('Customer', doc.customer, 'customer_name', 'Changed ERP master name')
+        doc.reload()
+        self.assertEqual({field: doc.get(field) for field in recorded}, recorded)
+        doc.cancel()
+        amendment = frappe.copy_doc(doc)
+        amendment.docstatus = 0
+        amendment.amended_from = doc.name
+        amendment.insert()
+        self.assertEqual(amendment.party_entry_version, 'direct-v1')
+        self.assertEqual({field: amendment.get(field) for field in recorded}, recorded)
+
+    def test_historical_party_text_is_preserved_on_save_until_explicitly_edited(self):
+        doc = contract()
+        frappe.db.set_value(doc.doctype, doc.name, dict(party_entry_version=None,
+            seller_name=None, seller_email=None, seller_phone=None, buyer_phone=None, buyer_email_phone=None))
+        doc.reload()
+        recorded = {field: doc.get(field) for field in ('customer_name', 'customer_tax_id',
+            'address_display', 'contact_display', 'seller_address_display')}
+        before = frappe.get_print(doc.doctype, doc.name, print_format='Standard')
+        frappe.db.set_value('Customer', doc.customer, 'customer_name', 'Changed ERP buyer')
+        doc.save()
+        self.assertEqual({field: doc.get(field) for field in recorded}, recorded)
+        self.assertEqual(frappe.get_print(doc.doctype, doc.name, print_format='Standard'), before)
+        doc.customer_name = 'Explicit historical correction'
+        doc.save()
+        self.assertEqual(doc.reload().customer_name, 'Explicit historical correction')
+
+        for field, value in [('seller_email', 'edited-historical@example.invalid'),
+                ('seller_phone', '001122334455')]:
+            doc.set(field, value)
+            doc.save()
+            html = frappe.get_print(doc.doctype, doc.name, print_format='Standard')
+            self.assertIn(value, html)
+            self.assertIn('info@petrol-zone.com' if field == 'seller_phone' else '00964 770 000 3737', html)
+            doc.set(field, None)
+            doc.save()
+
+
+    def test_historical_party_links_cannot_be_reassigned_through_payloads(self):
+        doc = contract()
+        customer_address = frappe.db.get_value('Dynamic Link',
+            dict(parenttype='Address', link_doctype='Customer', link_name=doc.customer), 'parent')
+        contact_person = frappe.db.get_value('Dynamic Link',
+            dict(parenttype='Contact', link_doctype='Customer', link_name=doc.customer), 'parent')
+        frappe.db.set_value(doc.doctype, doc.name, dict(party_entry_version=None,
+            customer_address=customer_address, contact_person=contact_person,
+            seller_address='PZ Synthetic Seller-Billing'))
+        doc.reload()
+        _, unrelated_address, unrelated_contact = new_customer()
+        for field, value in [('customer_address', unrelated_address.name),
+                ('contact_person', unrelated_contact.name), ('seller_address', unrelated_address.name)]:
+            doc.set(field, value)
+            with self.assertRaisesRegex(frappe.ValidationError, 'Historical .* cannot be changed'):
+                doc.save()
+            doc.reload()
+        doc.contact_display = 'Explicit historical representative correction'
+        doc.save()
+        self.assertEqual(doc.contact_person, contact_person)
