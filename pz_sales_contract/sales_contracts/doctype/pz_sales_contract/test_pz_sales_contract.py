@@ -1618,3 +1618,79 @@ class TestPZSalesContract(IntegrationTestCase):
                 doc.items[0].rate = 350
                 with self.assertRaises(frappe.ValidationError):
                     doc.insert()
+
+    def test_native_include_and_pdf_context_survive_delegating_renderer_hook(self):
+        from frappe.www.printview import get_html_and_style
+        from frappe.utils.print_format import download_pdf
+        native_hooks = frappe.get_hooks
+
+        def delegating_hooks(hook=None, *args, **kwargs):
+            # Print Designer's reported fallback delegates to this native body
+            # renderer instead of calling this app's pdf_body_html hook.
+            if hook == 'pdf_body_html':
+                return ['frappe.utils.pdf.pdf_body_html']
+            return native_hooks(hook, *args, **kwargs)
+
+        draft = contract()
+        linked_draft = contract(submit=True, submit_sales_order=False)
+        unpaid = contract(submit=True)
+        paid = contract(submit=True)
+        receipt(paid, 300, cash=True)
+        cancelled = contract(submit=True)
+        cancelled.cancel()
+        cases = [
+            (draft, 'ERP document: Unsubmitted', True),
+            (linked_draft, 'LINKED SALES ORDER DRAFT', True),
+            (unpaid, 'ERP document: Submitted', True),
+            (paid, 'Confirmed receipt allocation: 300', False),
+            (cancelled, 'CANCELLED CONTRACT', False),
+        ]
+        with patch('frappe.get_hooks', side_effect=delegating_hooks):
+            for doc, expected, warning in cases:
+                with self.subTest(contract=doc.name):
+                    forged = doc.as_dict()
+                    forged.update(customer_name='FORGED BUYER', docstatus=1)
+                    preview = get_html_and_style(doc=json.dumps(forged, default=str),
+                        print_format='Petrol Zone Sales Contract')['html']
+                    # Keep native PrintView and PDF routing real; capture only
+                    # the binary conversion boundary (wkhtmltopdf isn't in CI).
+                    with patch('frappe.utils.pdf.get_pdf', return_value=b'%PDF-synthetic-boundary') as binary:
+                        download_pdf(doc.doctype, doc.name, format='Petrol Zone Sales Contract',
+                            pdf_generator='wkhtmltopdf')
+                    binary.assert_called_once()
+                    self.assertEqual(frappe.local.response.filecontent, b'%PDF-synthetic-boundary')
+                    pdf_html = binary.call_args.args[0]
+                    for html in (preview, pdf_html):
+                        self.assertIn(expected, html)
+                        self.assertNotIn('FORGED BUYER', html)
+                        self.assertEqual('DRAFT — FIRST ADVANCE NOT CONFIRMED' in html, warning)
+                        self.assertIn('Contract Amount · USD', html)
+
+    def test_contract_template_reloads_state_and_enforces_permissions_and_saved_status(self):
+        from pz_sales_contract.printing import get_contract_print_context
+        doc = contract(submit=True)
+        # Calling the installed include directly has exactly the minimal context
+        # passed by native pdf_body_html, and cannot accept a forged paid state.
+        template = frappe.get_jenv().from_string(
+            '{% include "pz_sales_contract/templates/contract.html" %}')
+        html = template.render(doc=doc, state=frappe._dict(payment_draft=False, confirmed=1000))
+        self.assertIn('DRAFT — FIRST ADVANCE NOT CONFIRMED', html)
+        self.assertNotIn('Confirmed receipt allocation: 1,000', html)
+        with self.assertRaises(frappe.DoesNotExistError):
+            get_contract_print_context(frappe._dict(doctype=doc.doctype, name='UNSAVED-SYNTHETIC'))
+        try:
+            frappe.set_user('Guest')
+            with self.assertRaises(frappe.PermissionError):
+                get_contract_print_context(doc)
+        finally:
+            frappe.set_user('Administrator')
+        doc.cancel()
+        previous = frappe.db.get_single_value('Print Settings', 'allow_print_for_cancelled')
+        try:
+            frappe.db.set_single_value('Print Settings', 'allow_print_for_cancelled', 0)
+            forged = doc.as_dict()
+            forged.docstatus = 1
+            with self.assertRaises(frappe.PermissionError):
+                get_contract_print_context(forged)
+        finally:
+            frappe.db.set_single_value('Print Settings', 'allow_print_for_cancelled', previous)

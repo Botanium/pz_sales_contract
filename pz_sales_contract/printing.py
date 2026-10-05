@@ -61,11 +61,24 @@ def guard_renderer():
 def pdf_body_html(template, args, **kwargs):
     if args['doc'].doctype != 'PZ Sales Contract':
         return default_body(template=template, args=args, **kwargs)
-    # All native print formats use persisted server data and the mandatory branded
-    # template. A forged doc payload or alternate Standard format cannot remove it.
-    doc = frappe.get_doc('PZ Sales Contract', args['doc'].name)
+    # The template initializes its own canonical context, including when another
+    # app's PDF hook delegates directly to Frappe's native template renderer.
+    return frappe.render_template('pz_sales_contract/templates/contract.html', {'doc': args['doc']})
+
+
+def get_contract_print_context(doc):
+    """Build every print value from a saved, permission-checked contract."""
+    if doc.get('doctype') != 'PZ Sales Contract' or not doc.get('name'):
+        frappe.throw('A saved PZ Sales Contract is required for printing')
+    doc = frappe.get_doc('PZ Sales Contract', doc.get('name'))
     doc.check_permission('read')
     doc.check_permission('print')
+    # Check the persisted status too: a supplied document may forge docstatus.
+    settings = frappe.get_single('Print Settings')
+    if doc.docstatus == 0 and not settings.allow_print_for_draft:
+        frappe.throw('Not allowed to print draft documents', frappe.PermissionError)
+    if doc.docstatus == 2 and not settings.allow_print_for_cancelled:
+        frappe.throw('Not allowed to print cancelled documents', frappe.PermissionError)
     path = Path(frappe.get_app_path('pz_sales_contract'))
     holiday_data = frappe.parse_json(doc.holiday_calendar_snapshot) if doc.holiday_calendar_snapshot else {
         'name': '', 'from_date': '', 'to_date': '', 'holidays': [],
@@ -96,7 +109,7 @@ def pdf_body_html(template, args, **kwargs):
         clauses=clauses_for_contract(doc),
         logo='data:image/png;base64,'+base64.b64encode((path/'public/petrol_zone_logo.png').read_bytes()).decode(),
         erp_status=['Unsubmitted', 'Submitted', 'Cancelled'][int(doc.docstatus)])
-    return frappe.render_template('pz_sales_contract/templates/contract.html', context)
+    return context
 
 
 def pdf_header_html(soup, head, content, styles, html_id, css):
