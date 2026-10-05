@@ -6,7 +6,7 @@ Seller legal name, address, email and phone start with the user-supplied Petrol 
 
 The server enforces nonblank party text and discards Contact/Address payload links for new-policy records. Party values print from the saved contract, escaped as text. Customer or Company master edits do not overwrite saved contract party text. Switching Customer on an unsaved form clears buyer details so the previous buyer is not carried forward.
 
-Existing contracts and their amendments retain their policy and stored snapshots without new mandatory requirements or automatic seller defaults. Their original print presentation remains unless new party fields are explicitly populated; edits to existing party text are retained. No bulk data rewrite is performed. New-policy amendments keep their source policy and party text.
+Existing contracts and their amendments retain their policy and stored snapshots without new mandatory requirements or automatic seller defaults. Historical hidden Address/Contact links are immutable on saves and amendments; users edit party text instead. Their original print presentation remains unless new party fields are explicitly populated; edits to existing party text are retained. No bulk data rewrite is performed. New-policy amendments keep their source policy and party text.
 
 Native Sales Orders retain Customer/Company identity and their own native address/contact behavior, independently of direct contract party text. New-policy contracts do not forward or compare Address/Contact links to the Sales Order. Historical orders retain their existing association checks. Contract prices, payment evidence, Grade, packaging, USD and delivery/tax policies are unchanged.
 

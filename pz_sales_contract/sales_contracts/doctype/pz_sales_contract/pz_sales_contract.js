@@ -278,7 +278,7 @@ function checklistStatus(doc, group) {
   if (group.firstField === "customer_name" && (doc.party_entry_version === "direct-v1" || (doc.__islocal && !doc.amended_from))) fields = [...fields, ...partyFields];
   if (newEntry) fields = fields.filter((fieldname) => !["conversion_rate", "selling_price_list", "named_place"].includes(fieldname));
   if (newEntry && group.firstField === "incoterm") fields = [...fields, "contract_location"];
-  let missing = fields.filter((fieldname) => isMissingValue(fieldname, doc[fieldname])).length;
+  let missing = [...new Set(fields)].filter((fieldname) => isMissingValue(fieldname, doc[fieldname])).length;
   if (group.table === "items") {
     const rows = doc.items || [];
     const historicGradeAllowed = !doc.__islocal || Boolean(doc.amended_from);

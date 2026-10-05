@@ -249,6 +249,9 @@ class TestPZSalesContract(IntegrationTestCase):
         frappe.db.set_value(doc.doctype, doc.name, {
             'entry_policy_version': None,
             'party_entry_version': None,
+            'customer_address': frappe.db.get_value('Dynamic Link', dict(parenttype='Address', link_doctype='Customer', link_name=doc.customer), 'parent'),
+            'contact_person': frappe.db.get_value('Dynamic Link', dict(parenttype='Contact', link_doctype='Customer', link_name=doc.customer), 'parent'),
+            'seller_address': 'PZ Synthetic Seller-Billing',
             'terms_version': None,
             'terms_snapshot': None,
             'contract_scope_version': None,
@@ -1495,3 +1498,35 @@ class TestPZSalesContract(IntegrationTestCase):
         doc.customer_name = 'Explicit historical correction'
         doc.save()
         self.assertEqual(doc.reload().customer_name, 'Explicit historical correction')
+
+        for field, value in [('seller_email', 'edited-historical@example.invalid'),
+                ('seller_phone', '001122334455')]:
+            doc.set(field, value)
+            doc.save()
+            html = frappe.get_print(doc.doctype, doc.name, print_format='Standard')
+            self.assertIn(value, html)
+            self.assertIn('info@petrol-zone.com' if field == 'seller_phone' else '00964 770 000 3737', html)
+            doc.set(field, None)
+            doc.save()
+
+
+    def test_historical_party_links_cannot_be_reassigned_through_payloads(self):
+        doc = contract()
+        customer_address = frappe.db.get_value('Dynamic Link',
+            dict(parenttype='Address', link_doctype='Customer', link_name=doc.customer), 'parent')
+        contact_person = frappe.db.get_value('Dynamic Link',
+            dict(parenttype='Contact', link_doctype='Customer', link_name=doc.customer), 'parent')
+        frappe.db.set_value(doc.doctype, doc.name, dict(party_entry_version=None,
+            customer_address=customer_address, contact_person=contact_person,
+            seller_address='PZ Synthetic Seller-Billing'))
+        doc.reload()
+        _, unrelated_address, unrelated_contact = new_customer()
+        for field, value in [('customer_address', unrelated_address.name),
+                ('contact_person', unrelated_contact.name), ('seller_address', unrelated_address.name)]:
+            doc.set(field, value)
+            with self.assertRaisesRegex(frappe.ValidationError, 'Historical .* cannot be changed'):
+                doc.save()
+            doc.reload()
+        doc.contact_display = 'Explicit historical representative correction'
+        doc.save()
+        self.assertEqual(doc.contact_person, contact_person)

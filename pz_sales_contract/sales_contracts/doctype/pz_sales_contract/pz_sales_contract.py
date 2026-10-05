@@ -316,6 +316,12 @@ class PZSalesContract(Document):
         if not entry_source and self.amended_from:
             entry_source = frappe.get_doc(self.doctype, self.amended_from)
             entry_source.check_permission('read')
+        if entry_source and not uses_direct_parties(self):
+            # Historical hidden links are retained as internal associations,
+            # never editable through REST or rewritten from current masters.
+            for fieldname in PARTY_LINK_FIELDS:
+                if self.get(fieldname) != entry_source.get(fieldname):
+                    frappe.throw(f'Historical {fieldname} cannot be changed; edit the party text instead')
         validate_party_fields(self)
         apply_usd_policy(self, entry_source)
         validate_location(self, entry_source)
