@@ -1,10 +1,27 @@
 """Explicit defaults for contracts created after the simplified entry cutover."""
 import math
+from decimal import Decimal, InvalidOperation
 
 import frappe
 from frappe.utils import add_days, getdate
 
 ENTRY_POLICY_VERSION = 'usd-location-v1'
+
+
+def normalize_discount(value):
+    """An omitted optional discount is zero; malformed values never become zero."""
+    if value is None or value == '':
+        return 0.0
+    try:
+        amount = Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        frappe.throw('Discount must be a finite non-negative number')
+    if not amount.is_finite() or amount < 0:
+        frappe.throw('Discount must be a finite non-negative number')
+    result = float(amount)
+    if not math.isfinite(result):
+        frappe.throw('Discount must be a finite non-negative number')
+    return result
 
 # Exact Item IDs observed on the test site; never infer packaging from substrings.
 ITEM_PACKAGING = {

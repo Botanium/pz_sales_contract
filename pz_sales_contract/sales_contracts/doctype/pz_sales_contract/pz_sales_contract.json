@@ -154,7 +154,7 @@
       "fieldname": "customer_tax_id",
       "label": "Registration / tax / ID",
       "fieldtype": "Data",
-      "mandatory_depends_on": "eval:doc.party_entry_version === 'direct-v1' || (doc.__islocal && !doc.amended_from)"
+      "description": "Optional registration, tax number or other ID."
     },
     {
       "fieldname": "customer_address",
@@ -259,7 +259,8 @@
       "fieldname": "discount_amount",
       "label": "Discount on net total",
       "fieldtype": "Currency",
-      "options": "currency"
+      "options": "currency",
+      "default": "0"
     },
     {
       "fieldname": "taxes",
@@ -484,17 +485,15 @@
     },
     {
       "fieldname": "payment",
-      "label": "Verified payment instructions",
+      "label": "Payment instructions (optional)",
       "fieldtype": "Section Break",
       "collapsible": 1
     },
     {
       "fieldname": "bank_receiving_account",
       "label": "Nominated bank receiving account",
-      "fieldtype": "Link",
-      "options": "Account",
-      "reqd": 1,
-      "description": "Manager verifies that the payment instructions identify this seller Bank account. Only receipts to this account qualify."
+      "fieldtype": "Data",
+      "description": "Optional. Enter the bank or receiving-account details."
     },
     {
       "fieldname": "cash_receiving_account",
@@ -506,26 +505,22 @@
     {
       "fieldname": "beneficiary",
       "label": "Account beneficiary",
-      "fieldtype": "Data",
-      "reqd": 1
+      "fieldtype": "Data"
     },
     {
       "fieldname": "bank_branch",
       "label": "Bank / branch",
-      "fieldtype": "Data",
-      "reqd": 1
+      "fieldtype": "Data"
     },
     {
       "fieldname": "account_iban",
       "label": "Currency / account / IBAN",
-      "fieldtype": "Data",
-      "reqd": 1
+      "fieldtype": "Data"
     },
     {
       "fieldname": "swift_reference",
       "label": "SWIFT / payment reference",
-      "fieldtype": "Data",
-      "reqd": 1
+      "fieldtype": "Data"
     },
     {
       "fieldname": "records",
@@ -690,8 +685,7 @@
       "fieldname": "buyer_email_phone",
       "label": "Email / phone",
       "fieldtype": "Data",
-      "mandatory_depends_on": "eval:doc.party_entry_version === 'direct-v1' || (doc.__islocal && !doc.amended_from)",
-      "description": "Enter an email address or phone number; a phone number alone is accepted."
+      "description": "Optional additional email address or phone number. The primary Buyer phone is still required."
     },
     {
       "fieldname": "party_entry_version",

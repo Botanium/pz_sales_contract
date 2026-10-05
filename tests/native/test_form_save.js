@@ -322,3 +322,49 @@ test("native party mandatory checks accept phone-only contact and block missing 
   assert.equal(ui.saves.length, 1);
   assert.equal(ui.saves[0].buyer_email_phone, "00971 505 65 1305");
 });
+
+
+test("native Save permits optional buyer details blank but still requires primary phone", async () => {
+  const ui = nativeDesk(); await ui.setup(); await ui.frm.refresh(); await flush(); await ui.respond({});
+  ui.frm.doc.customer_tax_id = null;
+  ui.frm.doc.buyer_email_phone = "";
+  assert.equal(ui.frm.fields_dict.customer_tax_id.df.reqd, false);
+  assert.equal(ui.frm.fields_dict.buyer_email_phone.df.reqd, false);
+  assert.equal(ui.frappe.ui.form.check_mandatory(ui.frm), true);
+  ui.frm.doc.buyer_phone = "";
+  await ui.save();
+  assert.equal(ui.saves.length, 0);
+  ui.frm.doc.buyer_phone = "0012345678";
+  await ui.save();
+  assert.equal(ui.saves.length, 1);
+  assert.equal(ui.saves[0].customer_tax_id, null);
+  assert.equal(ui.saves[0].buyer_email_phone, "");
+});
+
+
+test("native Save permits empty optional payment instructions and free-text bank", async () => {
+  const ui = nativeDesk(); await ui.setup(); await ui.frm.refresh(); await flush(); await ui.respond({});
+  for (const field of ["bank_receiving_account", "cash_receiving_account", "beneficiary", "bank_branch", "account_iban", "swift_reference"]) {
+    ui.frm.doc[field] = "";
+    assert.equal(ui.frm.fields_dict[field].df.reqd, false);
+  }
+  assert.equal(ui.frappe.ui.form.check_mandatory(ui.frm), true);
+  ui.frm.doc.bank_receiving_account = "Synthetic unlinked bank text";
+  await ui.save();
+  assert.equal(ui.saves.length, 1);
+  assert.equal(ui.saves[0].bank_receiving_account, "Synthetic unlinked bank text");
+});
+
+
+test("native Save preserves all optional payment fields cleared before defaults arrive", async () => {
+  const ui = nativeDesk();
+  const fields = ["bank_receiving_account", "cash_receiving_account", "beneficiary", "bank_branch", "account_iban", "swift_reference"];
+  for (const field of fields) ui.frm.doc[field] = `Initial ${field}`;
+  await ui.setup();
+  await ui.frm.refresh(); await flush();
+  for (const field of fields) await ui.frm.set_value(field, "");
+  await ui.respond({ currency: "USD", ...Object.fromEntries(fields.map(field => [field, `Configured ${field}`])) });
+  await ui.save();
+  assert.equal(ui.saves.length, 1);
+  for (const field of fields) assert.equal(ui.saves[0][field], "", field);
+});

@@ -1,8 +1,8 @@
 const defaultContractIncoterms = ["EXW", "FOB", "CIF"];
 const contractChildLookupStates = new WeakMap();
 const partyFields = ["seller_name", "seller_address_display", "seller_email", "seller_phone",
-  "customer_name", "customer_tax_id", "address_display", "buyer_phone", "contact_display",
-  "buyer_position", "buyer_email_phone"];
+  "customer_name", "address_display", "buyer_phone", "contact_display",
+  "buyer_position"];
 const sellerTextDefaults = { seller_name: "Petrol Zone Company", seller_address_display: "Arbat-Sulaimani, Iraq",
   seller_email: "info@petrol-zone.com", seller_phone: "00964 770 000 3737" };
 function usesDirectParties(frm) {
@@ -54,6 +54,7 @@ const currencyDependentDefaultFields = [
 ];
 
 const bankInstructionDefaultFields = ["beneficiary", "bank_branch", "account_iban", "swift_reference"];
+const optionalPaymentFields = ["bank_receiving_account", "cash_receiving_account", ...bankInstructionDefaultFields];
 
 function ensureCompanyDefaultsDocument(frm) {
   // Desk reuses one Form, including when revisiting cached unsaved documents.
@@ -163,11 +164,6 @@ const requiredChecklistGroups = [
       "seller_position",
       "buyer_position",
     ],
-  },
-  {
-    label: "Verified payment instructions",
-    firstField: "bank_receiving_account",
-    fields: ["bank_receiving_account", "beneficiary", "bank_branch", "account_iban", "swift_reference"],
   },
 ];
 
@@ -400,6 +396,9 @@ function loadCompanyDefaults(frm, expectedCompany, requestId) {
           }
           for (const fieldname of companyDefaultFields) {
             if (fieldname === "seller_address") continue;
+            // A user-cleared optional field must survive a late defaults response.
+            if (optionalPaymentFields.includes(fieldname)
+              && frm._pzCompanyDefaultTouchedFields.has(fieldname)) continue;
             if (usesUsdEntry(frm) && ["currency", "conversion_rate", "selling_price_list"].includes(fieldname)) continue;
             const dependent = currencyDependentDefaultFields.includes(fieldname);
             const replaceFrameworkDefault = dependent && frm._pzCompanyDefaultsHasCurrencyDependentDefaults
@@ -551,7 +550,6 @@ frappe.ui.form.on("PZ Sales Contract", {
     frm.set_query("item_code", "items", () => ({ filters: { disabled: 0, is_sales_item: 1 } }));
     frm.set_query("grade_master", "items", () => ({ filters: { disabled: 0 } }));
     frm.set_query("contract_location", () => ({ filters: { disabled: 0 } }));
-    frm.set_query("bank_receiving_account", () => ({ filters: { company: frm.doc.company, account_type: "Bank", is_group: 0, disabled: 0 } }));
     frm.set_query("cash_receiving_account", () => ({ filters: { company: frm.doc.company, account_type: "Cash", is_group: 0, disabled: 0 } }));
     frm.set_query("selling_price_list", () => ({ filters: { enabled: 1, selling: 1 } }));
   },
@@ -575,6 +573,7 @@ frappe.ui.form.on("PZ Sales Contract", {
   refresh(frm) {
     ensureCompanyDefaultsDocument(frm);
     const directParties = usesDirectParties(frm);
+    for (const field of ["customer_tax_id", "buyer_email_phone", ...optionalPaymentFields]) frm.set_df_property(field, "reqd", false);
     for (const field of partyFields) frm.set_df_property(field, "reqd", directParties || field === "buyer_position");
     if (frm.is_new() && !frm.doc.amended_from && frm._pzPartyDefaultsDoc !== frm.doc) {
       frm._pzPartyDefaultsDoc = frm.doc;

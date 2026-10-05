@@ -6,13 +6,13 @@ from frappe.model.document import Document
 from frappe.utils import getdate
 
 from pz_sales_contract.parties import (
-    PARTY_ENTRY_VERSION, PARTY_LINK_FIELDS, SELLER_DEFAULTS, uses_direct_parties, validate_party_fields,
+    PARTY_ENTRY_VERSION, PARTY_LINK_FIELDS, PAYMENT_INSTRUCTION_FIELDS, SELLER_DEFAULTS, uses_direct_parties, validate_party_fields,
 )
 from pz_sales_contract.calendar import add_open_hours, schedule
 from pz_sales_contract.contract_terms import CURRENT_TERMS_VERSION, snapshot_for_new_contract
 from pz_sales_contract.entry_policy import (
     ENTRY_POLICY_VERSION, apply_item_packaging, apply_usd_policy,
-    find_previous_item_row, uses_entry_policy, validate_location,
+    find_previous_item_row, normalize_discount, uses_entry_policy, validate_location,
 )
 from pz_sales_contract.sales_contracts.doctype.pz_contract_defaults.pz_contract_defaults import (
     COMPANY_DEFAULT_FIELDS,
@@ -30,10 +30,6 @@ CURRENCY_DEPENDENT_DEFAULT_FIELDS = frozenset({
     'bank_branch',
     'account_iban',
     'swift_reference',
-})
-
-BANK_INSTRUCTION_DEFAULT_FIELDS = frozenset({
-    'beneficiary', 'bank_branch', 'account_iban', 'swift_reference',
 })
 
 HISTORICAL_CONTRACT_FIELDS = (
@@ -57,8 +53,7 @@ LEGACY_REQUIRED_CONTRACT_FIELDS = (
     'opens_at', 'closes_at', 'holiday_list', 'notice_channel', 'collection_grace',
     'grace_unit', 'collection_arrangement', 'delay_charges', 'penalty_basis_cap',
     'cure_period', 'latent_claim_period', 'force_majeure_threshold', 'governing_law',
-    'courts', 'specifications', 'bank_receiving_account', 'beneficiary', 'bank_branch',
-    'account_iban', 'swift_reference',
+    'courts', 'specifications',
 )
 LEGACY_REQUIRED_ITEM_FIELDS = (
     'item_code', 'grade', 'qty', 'uom', 'rate', 'specification_reference',
@@ -100,8 +95,12 @@ class PZSalesContract(Document):
                 if value in (None, '') or (fieldname == 'conversion_rate' and value == 0):
                     initially_blank_currency_dependent.add(fieldname)
 
+        payment_input = {field: self.get(field) for field in PAYMENT_INSTRUCTION_FIELDS}
         party_input = {field: self.get(field) for field in SELLER_DEFAULTS}
         super()._set_defaults()
+        for field, value in payment_input.items():
+            if value in (None, ''):
+                self.set(field, value)
         if new_family:
             for field, default in SELLER_DEFAULTS.items():
                 self.set(field, party_input[field] if party_input[field] not in (None, '') else default)
@@ -212,7 +211,7 @@ class PZSalesContract(Document):
                     price_list and price_list.currency == contract_currency
                     and price_list.enabled and price_list.selling
                 )
-            if fieldname in {'bank_receiving_account', 'cash_receiving_account'}:
+            if fieldname == 'cash_receiving_account':
                 account = frappe.db.get_value(
                     'Account', value,
                     ['company', 'account_type', 'is_group', 'disabled', 'account_currency'],
@@ -221,7 +220,7 @@ class PZSalesContract(Document):
                 account_currency = (account.account_currency if account else None) or frappe.db.get_value(
                     'Company', self.company, 'default_currency'
                 )
-                expected_kind = 'Bank' if fieldname == 'bank_receiving_account' else 'Cash'
+                expected_kind = 'Cash'
                 return bool(
                     account and account.company == self.company and account.account_type == expected_kind
                     and not account.is_group and not account.disabled and account_currency == contract_currency
@@ -237,7 +236,7 @@ class PZSalesContract(Document):
                 value = self.get(fieldname)
                 if not value or fieldname == 'conversion_rate':
                     continue
-                if fieldname in {'selling_price_list', 'bank_receiving_account', 'cash_receiving_account'} \
+                if fieldname in {'selling_price_list', 'cash_receiving_account'} \
                     and not compatible_injected_value(fieldname, value):
                     explicit_dependency_conflict = True
                     break
@@ -250,25 +249,15 @@ class PZSalesContract(Document):
             for fieldname in initially_blank:
                 self.set(fieldname, None)
 
-        # Instructions identify a particular bank, not just a currency. A
-        # deliberate alternate bank needs its own complete instructions.
-        profile_bank = defaults.get('bank_receiving_account')
-        uses_profile_bank = bool(profile_bank) and (
-            self.bank_receiving_account == profile_bank
-            or not self.bank_receiving_account
-            or 'bank_receiving_account' in initially_blank
-        )
         for fieldname in COMPANY_DEFAULT_FIELDS:
-            if fieldname == 'seller_address':
+            if fieldname == 'seller_address' or fieldname in PAYMENT_INSTRUCTION_FIELDS:
+                # Desk may suggest optional payment defaults, but a cleared
+                # input must stay blank when saved through Desk or REST.
                 continue
             if fieldname in CURRENCY_DEPENDENT_DEFAULT_FIELDS:
                 if not configured_bundle:
                     continue
                 if not currency_matches or explicit_dependency_conflict:
-                    continue
-                if fieldname in BANK_INSTRUCTION_DEFAULT_FIELDS and not uses_profile_bank:
-                    if fieldname in initially_blank:
-                        self.set(fieldname, None)
                     continue
                 if fieldname in initially_blank:
                     configured_value = defaults.get(fieldname)
@@ -293,6 +282,7 @@ class PZSalesContract(Document):
             self.set(fieldname, None)
 
     def validate(self):
+        self.discount_amount = normalize_discount(self.get('discount_amount'))
         old = self.get_doc_before_save()
         if old:
             for key in ['customer', 'company', 'first_family', 'sales_order', 'amended_from', 'contract_scope_version', 'terms_version', 'entry_policy_version', 'party_entry_version']:
@@ -386,7 +376,7 @@ class PZSalesContract(Document):
         price_list = frappe.get_doc('Price List', self.selling_price_list)
         if not price_list.enabled or not price_list.selling or price_list.currency != self.currency:
             frappe.throw('Choose an enabled selling price list in the contract currency')
-        for key, kind in [('bank_receiving_account','Bank'),('cash_receiving_account','Cash')]:
+        for key, kind in [('cash_receiving_account','Cash')]:
             if self.get(key):
                 account = frappe.get_doc('Account',self.get(key))
                 account.check_permission('read')
