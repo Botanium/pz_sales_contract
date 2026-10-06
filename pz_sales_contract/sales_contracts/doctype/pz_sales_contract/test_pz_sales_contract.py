@@ -1863,14 +1863,14 @@ class TestPZSalesContract(IntegrationTestCase):
                         self.assertIn('30% advance', html)
                         self.assertIn('70% balance', html)
 
-    def test_v4_terms_and_print_stamp_match_html_custom_print_and_native_pdf_input(self):
+    def test_v5_terms_and_print_stamp_match_html_custom_print_and_native_pdf_input(self):
         import base64
         from bs4 import BeautifulSoup
         from frappe.www.printview import get_html_and_style
         from frappe.utils.print_format import download_pdf
 
         doc = contract(print_as_draft=1)
-        expected_clauses = json.loads((Path(__file__).resolve().parents[3] / 'terms.json').read_text())
+        expected_clauses = json.loads(doc.terms_snapshot)
         expected_stamp = 'data:image/png;base64,' + base64.b64encode(
             b'synthetic site-private print fixture'
         ).decode()
