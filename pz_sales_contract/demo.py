@@ -7,7 +7,6 @@ from pathlib import Path
 
 import frappe
 from pypdf import PdfReader
-from pz_sales_contract.payments import payment_status
 from pz_sales_contract.testing import setup_fixtures, contract, receipt, new_customer, synthetic_bitumen_grade
 
 
@@ -43,8 +42,9 @@ frappe.destroy()
         retries+=int(out.decode().strip())
     frappe.db.rollback()
     names=frappe.get_all('PZ Sales Contract',filters={'customer':customer},pluck='name')
-    states=[payment_status(frappe.get_doc('PZ Sales Contract',name)) for name in names]
-    if len(names)!=2 or sum(s.first_contract for s in states)!=1:
+    families=[frappe.db.get_value('PZ Sales Contract',name,'first_family') for name in names]
+    reserved=frappe.db.get_value('PZ Contract Registry',{'customer':customer},'first_family')
+    if len(names)!=2 or families.count(reserved)!=1:
         raise RuntimeError('Concurrent first-family reservation failed')
     if frappe.db.count('PZ Contract Registry',{'customer':customer})!=1:
         raise RuntimeError('Duplicate customer reservation')
@@ -57,15 +57,15 @@ def export():
     frappe.db.set_single_value('Print Settings','allow_print_for_draft',1)
     frappe.db.set_single_value('Print Settings','allow_print_for_cancelled',1)
     output=Path('/tmp/pz-contract-evidence');output.mkdir(exist_ok=True)
-    first=contract(submit=True)
+    first=contract(submit=True,print_as_draft=1)
     results=[]
     def save(label,doc,expected_draft):
         html=frappe.get_print('PZ Sales Contract',doc.name,print_format='Petrol Zone Sales Contract',no_letterhead=1)
         pdf=frappe.get_print('PZ Sales Contract',doc.name,print_format='Petrol Zone Sales Contract',no_letterhead=1,as_pdf=True)
         reader=PdfReader(io.BytesIO(pdf))
         text=' '.join(page.extract_text() or '' for page in reader.pages)
-        if ('DRAFT' in text)!=expected_draft:
-            raise RuntimeError('Incorrect first-contract Draft state in PDF')
+        if ('DRAFT' in text)!=bool(doc.print_as_draft):
+            raise RuntimeError('Incorrect manual print Draft state in PDF')
         if expected_draft:
             if not all('DRAFT' in (page.extract_text() or '') for page in reader.pages):
                 raise RuntimeError('Draft header missing from continuation page')
@@ -77,10 +77,13 @@ def export():
                 raise RuntimeError('Missing PDF content: '+expected)
         (output/(label+'.pdf')).write_bytes(pdf)
         (output/(label+'.html')).write_text(html)
-        results.append({'file':label+'.pdf','pages':len(reader.pages),'contract':doc.name,'payment_draft':expected_draft})
-    save('Petrol-Zone-Synthetic-First-Contract-DRAFT',first,True)
+        results.append({'file':label+'.pdf','pages':len(reader.pages),'contract':doc.name,'print_as_draft':bool(doc.print_as_draft)})
+    save('Petrol-Zone-Synthetic-Operator-Marked-DRAFT',first,True)
     receipt(first,first.advance_required,cash=True)
-    save('Petrol-Zone-Synthetic-First-Contract-Advance-Confirmed',first,False)
+    save('Petrol-Zone-Synthetic-Paid-Still-Operator-Marked-DRAFT',first,True)
+    first.print_as_draft=0
+    first.save()
+    save('Petrol-Zone-Synthetic-Paid-Operator-Unmarked',first,False)
     later=contract(customer=first.customer,submit=True)
     save('Petrol-Zone-Synthetic-Returning-Customer',later,False)
     previous=frappe.db.get_single_value('Selling Settings','allow_multiple_items')
@@ -89,7 +92,9 @@ def export():
     long=contract(items=[dict(item_code='PZ Synthetic Bitumen',qty=1,uom='Nos',rate=10,
         grade_master=grade_master,grade='PZ-SYNTHETIC-60-70',packaging='Synthetic drums',
         specification_reference='Synthetic long-order QA') for _ in range(30)],submit=True)
-    save('Petrol-Zone-Synthetic-Long-Contract-DRAFT',long,True)
+    long.print_as_draft=1
+    long.save()
+    save('Petrol-Zone-Synthetic-Long-Operator-Marked-DRAFT',long,True)
     frappe.db.set_single_value('Selling Settings','allow_multiple_items',previous)
     frappe.db.commit()
     (output/'manifest.json').write_text(json.dumps(results,indent=2))

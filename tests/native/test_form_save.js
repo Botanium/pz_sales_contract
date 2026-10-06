@@ -368,3 +368,13 @@ test("native Save preserves all optional payment fields cleared before defaults 
   assert.equal(ui.saves.length, 1);
   for (const field of fields) assert.equal(ui.saves[0][field], "", field);
 });
+
+test("native Save persists the manually selected Print as Draft checkbox without payment state", async () => {
+  const ui = nativeDesk(); await ui.setup(); await ui.frm.refresh(); await flush(); await ui.respond({});
+  assert.equal(ui.frm.fields_dict.print_as_draft.df.fieldtype, "Check");
+  assert.equal(String(ui.frm.fields_dict.print_as_draft.df.default || "0"), "0");
+  ui.frm.doc.print_as_draft = 1;
+  await ui.save();
+  assert.equal(ui.saves.length, 1);
+  assert.equal(ui.saves[0].print_as_draft, 1);
+});

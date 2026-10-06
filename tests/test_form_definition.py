@@ -48,6 +48,23 @@ class TestContractFormDefinition(unittest.TestCase):
         self.assertEqual(len(self.contract["field_order"]), len(set(self.contract["field_order"])))
         self.assertEqual(set(self.contract["field_order"]), set(fieldnames))
 
+    def test_print_as_draft_is_manual_and_defaults_off(self):
+        field = next(field for field in self.contract["fields"] if field["fieldname"] == "print_as_draft")
+        self.assertEqual((field["label"], field["fieldtype"], field["default"]),
+            ("Print as Draft", "Check", "0"))
+        self.assertTrue(field.get("no_copy"))
+        self.assertTrue(field.get("allow_on_submit"))
+        template = (ROOT / "pz_sales_contract/templates/contract.html").read_text()
+        self.assertIn("elif doc.print_as_draft", template)
+        self.assertIn("<div class=\"draft\">DRAFT</div>", template)
+        for obsolete in ("payment_draft", "FIRST ADVANCE NOT CONFIRMED", "Confirmed receipt allocation"):
+            self.assertNotIn(obsolete, template)
+        self.assertNotIn("payment_status(doc)", (ROOT / "pz_sales_contract/printing.py").read_text())
+        self.assertNotIn("Payment status reflects ERP receipt", template)
+        self.assertNotIn("This printout records ERP receipt", template)
+        self.assertNotIn("Advance evidence", self.javascript)
+        self.assertNotIn("advance has qualifying", self.javascript)
+
     def test_checklist_covers_all_required_contract_and_child_fields(self):
         groups = re.search(r"const requiredChecklistGroups = \[(.*?)\n\];", self.javascript, re.S)
         self.assertIsNotNone(groups)
@@ -199,7 +216,9 @@ class TestContractFormDefinition(unittest.TestCase):
         template = (ROOT / "pz_sales_contract/templates/contract.html").read_text()
         self.assertIn("if not is_item_only_draft", template)
         self.assertIn("not included in this contract total", template)
-        self.assertIn("LINKED SALES ORDER DRAFT", template)
+        self.assertIn("doc.print_as_draft", template)
+        self.assertNotIn("LINKED SALES ORDER DRAFT", template)
+        self.assertNotIn("payment_draft", template)
 
     def test_company_defaults_are_one_per_company_and_admin_managed(self):
         permissions = self.defaults["permissions"]
