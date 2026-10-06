@@ -222,6 +222,16 @@ class TestPZSalesContract(IntegrationTestCase):
             expected = 'data:image/png;base64,' + base64.b64encode(stamp_path.read_bytes()).decode()
             self.assertEqual(_load_print_stamp(directory), expected)
 
+    def test_public_history_stamp_is_not_embedded_in_new_prints(self):
+        from tempfile import TemporaryDirectory
+        from unittest.mock import patch
+        from pz_sales_contract.printing import PUBLICLY_EXPOSED_STAMP_SHA256, _load_print_stamp
+        with TemporaryDirectory() as directory:
+            (Path(directory) / 'petrol_zone_stamp.png').write_bytes(b'synthetic stamp bytes')
+            with patch('pz_sales_contract.printing.hashlib.sha256') as sha256:
+                sha256.return_value.hexdigest.return_value = PUBLICLY_EXPOSED_STAMP_SHA256
+                self.assertIsNone(_load_print_stamp(directory))
+
     def test_simplified_contract_rejects_specifications_omitted_from_its_print(self):
         doc = contract(insert=False, specifications=[dict(item_code='PZ Synthetic Bitumen',
             property='Penetration', unit='dmm', test_method='Synthetic method', requirement='60-70 (demo only)')])

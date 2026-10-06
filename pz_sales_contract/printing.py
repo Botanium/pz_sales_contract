@@ -1,4 +1,5 @@
 import base64
+import hashlib
 from pathlib import Path
 
 import frappe
@@ -8,6 +9,8 @@ from frappe.utils.pdf import pdf_body_html as default_body
 from pz_sales_contract.contract_terms import SIMPLE_PRINT_TERMS_VERSIONS, clauses_for_contract
 from pz_sales_contract.parties import PAYMENT_INSTRUCTION_FIELDS
 from pz_sales_contract.sales_contracts.doctype.pz_sales_contract.pz_sales_contract import ITEM_ONLY_DRAFT_SO_SCOPE
+
+PUBLICLY_EXPOSED_STAMP_SHA256 = 'b0fdc04b08852f74d37d8a2a8bec4d81afb888ba68bf07761c20d6fe2b94813b'
 
 
 def validate_format(doc, method=None):
@@ -66,11 +69,14 @@ def pdf_body_html(template, args, **kwargs):
 
 
 def _load_print_stamp(private_files_path):
-    """Load the optional site-private stamp asset for print output only."""
+    """Load a current site-private stamp, suppressing the exact public-history asset."""
     stamp_path = Path(private_files_path) / 'petrol_zone_stamp.png'
     if not stamp_path.is_file():
         return None
-    return 'data:image/png;base64,' + base64.b64encode(stamp_path.read_bytes()).decode()
+    stamp_bytes = stamp_path.read_bytes()
+    if hashlib.sha256(stamp_bytes).hexdigest() == PUBLICLY_EXPOSED_STAMP_SHA256:
+        return None
+    return 'data:image/png;base64,' + base64.b64encode(stamp_bytes).decode()
 
 
 def get_contract_print_context(doc):
