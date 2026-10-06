@@ -146,27 +146,53 @@ class TestContractFormDefinition(unittest.TestCase):
             hashlib.sha256(canonical_v1.encode("utf-8")).hexdigest(),
             python_constant(CONTRACT_TERMS_PY, "LEGACY_TERMS_V1_SHA256"),
         )
+        v2_terms = json.loads((ROOT / "pz_sales_contract/terms_versions/v2.json").read_text())
+        canonical_v2 = json.dumps(v2_terms, ensure_ascii=False, separators=(",", ":"))
+        self.assertEqual(
+            hashlib.sha256(canonical_v2.encode("utf-8")).hexdigest(),
+            python_constant(CONTRACT_TERMS_PY, "ARCHIVED_TERMS_V2_SHA256"),
+        )
+        v3_terms = json.loads((ROOT / "pz_sales_contract/terms_versions/v3.json").read_text())
+        canonical_v3 = json.dumps(v3_terms, ensure_ascii=False, separators=(",", ":"))
+        v3_digest = hashlib.sha256(canonical_v3.encode("utf-8")).hexdigest()
+        self.assertEqual(v3_digest, python_constant(CONTRACT_TERMS_PY, "CURRENT_TERMS_V3_SHA256"))
         active_terms = json.loads(TERMS_JSON.read_text())
-        self.assertEqual(len(active_terms), 2)
+        self.assertEqual(active_terms, v3_terms)
+        self.assertEqual(len(active_terms), 15)
         self.assertTrue(all(isinstance(clause, str) for clause in active_terms))
         self.assertNotEqual(active_terms, frozen_terms)
-        self.assertIn("discounted goods amount only", active_terms[1])
-        self.assertIn("linked Sales Order or invoice", active_terms[1])
-        new_terms = " ".join(active_terms).lower()
-        for prohibited in ("24 business hours", "penalty", "charge", "demurrage"):
-            self.assertNotIn(prohibited, new_terms)
+        self.assertNotEqual(active_terms, v2_terms)
+        self.assertIn("Commercial Schedule", active_terms[0])
+        self.assertIn("24 business hours", active_terms[2])
+        self.assertIn("latent defects", active_terms[8])
+        self.assertIn("governing-law and court fields", active_terms[14])
         terms_source = CONTRACT_TERMS_PY.read_text()
         self.assertIn("_legacy_terms_snapshot()", terms_source)
         new_contract_path = terms_source.split("def clauses_for_contract", 1)[0]
-        self.assertIn("return _validated_snapshot((_app_path() / 'terms.json').read_text(encoding='utf-8'))", new_contract_path)
+        self.assertIn("return raw", new_contract_path)
+        self.assertIn("CURRENT_TERMS_VERSION", new_contract_path)
+        self.assertIn("_snapshot_for_version(original.get('terms_version'))", new_contract_path)
         self.assertIn("clauses_for_contract(doc)", (ROOT / "pz_sales_contract/printing.py").read_text())
-        self.assertIn("simple_print = doc.get('terms_version') == CURRENT_TERMS_VERSION", (ROOT / "pz_sales_contract/printing.py").read_text())
-        self.assertEqual(python_constant(CONTRACT_TERMS_PY, "CURRENT_TERMS_VERSION"), "v2")
+        self.assertIn("simple_print = doc.get('terms_version') in SIMPLE_PRINT_TERMS_VERSIONS", (ROOT / "pz_sales_contract/printing.py").read_text())
+        self.assertEqual(python_constant(CONTRACT_TERMS_PY, "CURRENT_TERMS_VERSION"), "v3")
+        self.assertIn("'v2', CURRENT_TERMS_VERSION", terms_source)
         self.assertIn('frm.set_df_property("specifications", "hidden", simplifiedContract)', self.javascript)
         self.assertIn("Product specification rows are not part of the simplified contract version", self.controller)
         review_copy = (ROOT / "docs/contract-print-copy-review.md").read_text()
-        self.assertIn("## Exact new-contract wording", review_copy)
-        self.assertIn("The Contract Amount is the discounted goods amount only", review_copy)
+        self.assertIn("## Exact v3 contract terms", review_copy)
+        self.assertIn("Terms-to-form input gaps", review_copy)
+
+    def test_stamp_is_optional_print_asset_not_a_contract_field(self):
+        fieldnames = {field["fieldname"] for field in self.contract["fields"]}
+        self.assertNotIn("stamp", fieldnames)
+        self.assertNotIn("stamp_image", fieldnames)
+        printing = (ROOT / "pz_sales_contract/printing.py").read_text()
+        template = (ROOT / "pz_sales_contract/templates/contract.html").read_text()
+        self.assertIn("def _load_print_stamp(app_path):", printing)
+        self.assertIn("if not stamp_path.is_file():", printing)
+        self.assertIn("stamp=_load_print_stamp(path)", printing)
+        self.assertIn("{% if stamp %}<td class=\"seller-stamp-cell\"><img class=\"seller-stamp\"", template)
+        self.assertIn("Petrol Zone Company stamp", template)
 
     def test_primary_fields_stay_discoverable_and_advanced_sections_collapse(self):
         field_order = self.contract["field_order"]

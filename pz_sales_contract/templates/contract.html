@@ -7,6 +7,7 @@
 {% set format_money = contract_context.format_money %}
 {% set clauses = contract_context.clauses %}
 {% set logo = contract_context.logo %}
+{% set stamp = contract_context.stamp %}
 {% set payment_instructions = contract_context.payment_instructions %}
 {% macro payment_table() %}
 {% if payment_instructions %}<h2>Payment Instructions</h2>
@@ -55,10 +56,15 @@
 .contract .num { text-align:right; }
 .contract .totals { margin-left:45%; width:55%; }
 .contract .totals .total td { background:#fff0cd; font-weight:bold; border-top:2px solid #efa90a; }
-.contract .terms p { font-size:9pt!important; line-height:1.20!important; margin:0 0 8px!important; }
+.contract .terms p { font-size:9pt!important; line-height:1.20!important; margin:0 0 8px!important; page-break-inside:avoid; break-inside:avoid; }
 .contract .schedule .schedule-label { width:31%; color:#555; font-size:8.5pt; font-weight:normal; }
 .contract .schedule td { padding:5px!important; font-size:8.8pt; }
 .contract .signature { height:90px; border-bottom:1px solid #777; margin:20px 0 9px; }
+.contract .seller-signature-area { width:100%; border-collapse:collapse; table-layout:auto; margin:18px 0 9px; page-break-inside:avoid; }
+.contract .seller-signature-area td { border:0; padding:0!important; background:transparent!important; vertical-align:bottom; }
+.contract .seller-signature-area .signature { height:70px; margin:0; }
+.contract .seller-signature-area .seller-stamp-cell { width:132px; text-align:center; }
+.contract .seller-stamp { display:block; width:132px; max-height:84px; }
 .contract .quiet, .contract p.quiet { font-size:8pt!important; color:#555; }
 .contract .keep { page-break-inside:avoid; }
 .pz-running { font-family:Arial,sans-serif; font-size:8pt; color:#555; border-bottom:1px solid #efa90a; padding:3px 0; }
@@ -83,13 +89,13 @@
 <p class="quiet">The Contract Amount is the discounted goods amount only. Applicable taxes, if any, are recorded and calculated separately on the linked Sales Order or invoice; they are not included in the Contract Amount or the 30% / 70% calculation.</p>
 <p><strong>Incoterm:</strong> {{ doc.incoterm|e }} · <strong>Named place:</strong> {{ doc.named_place|e }}</p>
 </section>
-<section class="page terms">{{ header('Contract terms') }}<h2>Contract Terms</h2>
-{% for clause in clauses %}<p>{{ clause|e }}</p>{% endfor %}
-</section>
+{% for start, end in [(0,5),(5,10),(10,15)] %}{% if clauses[start:end] %}<section class="page terms">{{ header('Contract terms') }}<h2>Contract Terms</h2>
+{% for clause in clauses[start:end] %}<p>{{ clause|e }}</p>{% endfor %}
+</section>{% endif %}{% endfor %}
 <section class="page">
 {{ header('Payment instructions and signatures' if payment_instructions else 'Signatures') }}{{ payment_table() }}
 <h2>Signatures</h2><p>Each signatory confirms that they are authorised to sign for the party named below and that the party accepts this document, including its completed commercial details and the Contract Terms reproduced here.</p>
-<table class="details keep"><tr><td><strong>For Seller</strong>{{ (doc.seller_name or doc.company)|e }}<br><br>Authorised signatory: {{ doc.seller_signatory|e }}<br>Position: {{ doc.seller_position|e }}<div class="signature"></div>Signature / stamp<br><br>Date: __________________</td><td><strong>For Buyer</strong>{{ doc.customer_name|e }}<br><br>Authorised signatory: {{ doc.contact_display|e }}<br>Position: {{ doc.buyer_position|e }}<div class="signature"></div>Signature / stamp<br><br>Date: __________________</td></tr></table>
+<table class="details keep"><tr><td><strong>For Seller</strong>{{ (doc.seller_name or doc.company)|e }}<br><br>Authorised signatory: {{ doc.seller_signatory|e }}<br>Position: {{ doc.seller_position|e }}<table class="seller-signature-area"><tr><td><div class="signature"></div></td>{% if stamp %}<td class="seller-stamp-cell"><img class="seller-stamp" src="{{ stamp }}" alt="Petrol Zone Company stamp"></td>{% endif %}</tr></table>Authorised signature{% if stamp %} · Company stamp{% endif %}<br><br>Date: __________________</td><td><strong>For Buyer</strong>{{ doc.customer_name|e }}<br><br>Authorised signatory: {{ doc.contact_display|e }}<br>Position: {{ doc.buyer_position|e }}<div class="signature"></div>Signature / stamp<br><br>Date: __________________</td></tr></table>
 </section>
 </div>
 {% else %}
@@ -134,7 +140,7 @@
 <table><thead><tr><th>Event</th><th>Recorded date / time</th></tr></thead><tbody>{% for label,key in [('Order Approval received','approval_received'),('30% advance deadline','advance_deadline'),('Ready Notice received','ready_received'),('70% balance deadline','balance_deadline'),('Collection deadline','collection_deadline')] %}<tr><td>{{ label }}</td><td>{{ (doc.get(key) or 'Not yet recorded')|e }}</td></tr>{% endfor %}</tbody></table>
 <p class="quiet">Written approval / acceptance evidence: {{ (doc.approval_evidence or 'Not yet recorded')|e }}<br>Ready Notice delivery evidence: {{ (doc.ready_evidence or 'Not yet recorded')|e }}</p>
 <h2>Signatures</h2><p>By signing, each party confirms its authority and accepts the completed commercial terms, 30% advance, 70% balance, 24-business-hour deadlines, collection charges and force majeure provisions.</p>
-<table class="details keep"><tr><td><strong>For Seller</strong>{{ (doc.seller_name or doc.company)|e }}<br><br>Authorised signatory: {{ doc.seller_signatory|e }}<br>Position: {{ doc.seller_position|e }}<div class="signature"></div>Signature / stamp<br><br>Date: __________________</td><td><strong>For Buyer</strong>{{ doc.customer_name|e }}<br><br>Authorised signatory: {{ doc.contact_display|e }}<br>Position: {{ doc.buyer_position|e }}<div class="signature"></div>Signature / stamp<br><br>Date: __________________</td></tr></table>
+<table class="details keep"><tr><td><strong>For Seller</strong>{{ (doc.seller_name or doc.company)|e }}<br><br>Authorised signatory: {{ doc.seller_signatory|e }}<br>Position: {{ doc.seller_position|e }}<table class="seller-signature-area"><tr><td><div class="signature"></div></td>{% if stamp %}<td class="seller-stamp-cell"><img class="seller-stamp" src="{{ stamp }}" alt="Petrol Zone Company stamp"></td>{% endif %}</tr></table>Authorised signature{% if stamp %} · Company stamp{% endif %}<br><br>Date: __________________</td><td><strong>For Buyer</strong>{{ doc.customer_name|e }}<br><br>Authorised signatory: {{ doc.contact_display|e }}<br>Position: {{ doc.buyer_position|e }}<div class="signature"></div>Signature / stamp<br><br>Date: __________________</td></tr></table>
 </section>
 </div>
 {% endif %}

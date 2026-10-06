@@ -9,7 +9,7 @@ from pz_sales_contract.parties import (
     PARTY_ENTRY_VERSION, PARTY_LINK_FIELDS, PAYMENT_INSTRUCTION_FIELDS, SELLER_DEFAULTS, uses_direct_parties, validate_party_fields,
 )
 from pz_sales_contract.calendar import add_open_hours, schedule
-from pz_sales_contract.contract_terms import CURRENT_TERMS_VERSION, snapshot_for_new_contract
+from pz_sales_contract.contract_terms import CURRENT_TERMS_VERSION, SIMPLE_PRINT_TERMS_VERSIONS, snapshot_for_new_contract
 from pz_sales_contract.entry_policy import (
     ENTRY_POLICY_VERSION, apply_item_packaging, apply_usd_policy,
     find_previous_item_row, normalize_discount, uses_entry_policy, validate_location,
@@ -120,7 +120,7 @@ class PZSalesContract(Document):
         for fieldname in initially_blank_historical:
             self.set(fieldname, None)
         if not self.amended_from and (
-            self.is_new() or self.get('terms_version') == CURRENT_TERMS_VERSION
+            self.is_new() or self.get('terms_version') in SIMPLE_PRINT_TERMS_VERSIONS
         ):
             # Clear before Frappe validates Link fields such as holiday_list.
             self._clear_historical_contract_fields()
@@ -155,8 +155,9 @@ class PZSalesContract(Document):
             self.terms_version = CURRENT_TERMS_VERSION
             self.entry_policy_version = ENTRY_POLICY_VERSION
             self.party_entry_version = PARTY_ENTRY_VERSION
-            # New v2 families never accept hidden legacy schedule data through
-            # Desk defaults, imports, or REST payloads.
+            # New non-amendment v2/v3 families never accept hidden legacy schedule
+            # data through Desk defaults, imports, or REST payloads. Clear before
+            # validate_schedule so it cannot snapshot or derive legacy deadlines.
             self._clear_historical_contract_fields()
             self.delivery_date = None
             self.set('taxes', [])
@@ -293,7 +294,7 @@ class PZSalesContract(Document):
         elif self.is_new():
             # Reject forged readonly internal values from REST/import as well as Desk.
             self.sales_order = None
-        if self.get('terms_version') == CURRENT_TERMS_VERSION and not self.amended_from:
+        if self.get('terms_version') in SIMPLE_PRINT_TERMS_VERSIONS and not self.amended_from:
             # Also discard hidden legacy schedule values supplied on later saves.
             self._clear_historical_contract_fields()
         if self.uses_item_only_draft_order():
@@ -411,7 +412,7 @@ class PZSalesContract(Document):
                 frappe.throw('Tax / charge accounts must belong to the seller company')
 
     def validate_specifications(self):
-        if self.get('terms_version') == CURRENT_TERMS_VERSION:
+        if self.get('terms_version') in SIMPLE_PRINT_TERMS_VERSIONS:
             if self.specifications:
                 frappe.throw('Product specification rows are not part of the simplified contract version')
 
@@ -511,7 +512,7 @@ class PZSalesContract(Document):
 
     def validate_schedule(self):
         if self.uses_item_only_draft_order():
-            # V2 does not carry the historical Commercial Schedule.
+            # Item-only v2/v3 contracts do not carry the historical Commercial Schedule.
             return
         self.validate_legacy_contract_requirements()
         old = self.get_doc_before_save()
