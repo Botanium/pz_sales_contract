@@ -208,7 +208,7 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertEqual(snapshot_at_twenty[3:], snapshot_at_fifty[3:])
         self.assertIn('pay 50% of the total contract amount', doc.terms_snapshot)
         doc.submit()
-        doc.advance_percentage = 50
+        doc.advance_percentage = 60
         with self.assertRaises(frappe.ValidationError):
             doc.save()
 
