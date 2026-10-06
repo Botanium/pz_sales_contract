@@ -37,6 +37,7 @@ function desk(doc = newDoc("new-1")) {
   vm.runInNewContext(script, { frappe, __: (value) => value, Promise, Set, WeakMap, locals });
   const frm = {
     doc, fields_dict: {}, is_new() { return Boolean(this.doc.__islocal); },
+    get_field() { return null; }, refresh_field() {},
     set_df_property(fieldname, property, value) { fieldProperties[`${fieldname}.${property}`] = value; },
     set_query(fieldname, ...args) { queries[fieldname] = args.at(-1); }, set_intro() {}, add_custom_button() {},
     async set_value(key, value) {
@@ -75,7 +76,80 @@ test("legacy contracts retain access to historical specifications", async () => 
   assert.equal(ui.fieldProperties["selling_price_list.hidden"], false);
 });
 
-for (const version of ["v2", "v3", "v4"]) {
+test("advance split defaults to 30 and previews fractional percentages with money rounding", async () => {
+  const ui = desk();
+  await ui.refresh();
+  ui.frm.doc.items = [{ qty: 1, rate: 100.01 }];
+  ui.frm.doc.discount_amount = 0;
+  ui.childEvents.qty(ui.frm);
+  assert.equal(ui.frm.doc.advance_percentage, 30);
+  assert.equal(ui.frm.doc.advance_required, 30);
+  assert.equal(ui.frm.doc.balance_required, 70.01);
+  assert.equal(ui.fieldProperties["advance_required.label"], "Required advance (30%)");
+  assert.equal(ui.fieldProperties["balance_required.label"], "Balance (70%)");
+
+  for (const [percentage, advance, balance] of [
+    [50, 50.01, 50], [20, 20, 80.01], [0, 0, 100.01], [100, 100.01, 0], [12.5, 12.5, 87.51],
+  ]) {
+    ui.frm.doc.advance_percentage = percentage;
+    ui.events.advance_percentage(ui.frm);
+    assert.equal(ui.frm.doc.advance_required, advance, `${percentage}% advance`);
+    assert.equal(ui.frm.doc.balance_required, balance, `${100 - percentage}% balance`);
+    assert.equal(ui.fieldProperties["advance_required.label"], `Required advance (${percentage}%)`);
+    assert.equal(ui.fieldProperties["balance_required.label"], `Balance (${100 - percentage}%)`);
+    assert.equal(Math.round((ui.frm.doc.advance_required + ui.frm.doc.balance_required) * 100) / 100, 100.01);
+  }
+});
+
+test("quantity, rate, and discount changes recalculate the contract payment preview", async () => {
+  const ui = desk();
+  await ui.refresh();
+  ui.frm.doc.advance_percentage = 50;
+  ui.frm.doc.items = [{ qty: 1, rate: 100.01 }];
+  ui.frm.doc.discount_amount = 0;
+  ui.childEvents.qty(ui.frm);
+  assert.deepEqual([ui.frm.doc.advance_required, ui.frm.doc.balance_required], [50.01, 50]);
+
+  ui.frm.doc.items[0].qty = 2;
+  ui.childEvents.qty(ui.frm);
+  assert.deepEqual([ui.frm.doc.advance_required, ui.frm.doc.balance_required], [100.01, 100.01]);
+
+  ui.frm.doc.items[0].rate = 150.01;
+  ui.childEvents.rate(ui.frm);
+  assert.deepEqual([ui.frm.doc.advance_required, ui.frm.doc.balance_required], [150.01, 150.01]);
+
+  ui.frm.doc.discount_amount = 30;
+  ui.events.discount_amount(ui.frm);
+  assert.deepEqual([ui.frm.doc.advance_required, ui.frm.doc.balance_required], [135.01, 135.01]);
+});
+
+test("invalid percentages are rejected and historical/amended percentages stay protected", async () => {
+  const ui = desk();
+  await ui.refresh();
+  for (const percentage of [-1, 100.01, Infinity, NaN]) {
+    ui.frm.doc.advance_percentage = percentage;
+    assert.throws(() => ui.events.advance_percentage(ui.frm), /finite number from 0 to 100/);
+    await assert.rejects(ui.events.before_save(ui.frm), /finite number from 0 to 100/);
+  }
+
+  const historical = desk(newDoc("old-v4", {
+    __islocal: 0, terms_version: "v4", grand_total: 101, advance_percentage: undefined,
+  }));
+  await historical.refresh();
+  assert.equal(historical.frm.doc.advance_percentage, 30);
+  assert.equal(historical.frm.doc.advance_required, 30.3);
+  assert.equal(historical.frm.doc.balance_required, 70.7);
+  assert.equal(historical.fieldProperties["advance_percentage.read_only"], true);
+
+  const amendment = desk(newDoc("amendment", {
+    amended_from: "Cancelled Contract", terms_version: "v5", advance_percentage: 50,
+  }));
+  await amendment.refresh();
+  assert.equal(amendment.frm.doc.advance_percentage, 50);
+  assert.equal(amendment.fieldProperties["advance_percentage.read_only"], true);
+});
+
+for (const version of ["v2", "v3", "v4", "v5"]) {
   test(`saved ${version} contracts keep the simplified specification editor hidden`, async () => {
     const ui = desk(newDoc(`${version}-saved`, { __islocal: 0, terms_version: version }));
     await ui.refresh();

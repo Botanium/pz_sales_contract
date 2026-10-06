@@ -18,6 +18,7 @@
     "selling_price_list",
     "items",
     "discount_amount",
+    "advance_percentage",
     "taxes",
     "subtotal",
     "tax_total",
@@ -264,6 +265,14 @@
       "default": "0"
     },
     {
+      "fieldname": "advance_percentage",
+      "label": "Advance percentage",
+      "fieldtype": "Percent",
+      "default": "30",
+      "precision": "4",
+      "description": "Percentage of the contract total paid as the advance; the remaining balance is 100% minus this value."
+    },
+    {
       "fieldname": "taxes",
       "label": "Historical taxes / charges",
       "fieldtype": "Table",
@@ -296,14 +305,14 @@
     },
     {
       "fieldname": "advance_required",
-      "label": "Required advance (30%)",
+      "label": "Required advance",
       "fieldtype": "Currency",
       "options": "currency",
       "read_only": 1
     },
     {
       "fieldname": "balance_required",
-      "label": "Balance (70%)",
+      "label": "Balance",
       "fieldtype": "Currency",
       "options": "currency",
       "read_only": 1
