@@ -65,9 +65,9 @@ def pdf_body_html(template, args, **kwargs):
     return frappe.render_template('pz_sales_contract/templates/contract.html', {'doc': args['doc']})
 
 
-def _load_print_stamp(app_path):
-    """Load the optional private stamp asset for print output only."""
-    stamp_path = Path(app_path) / 'private' / 'images' / 'petrol_zone_stamp.png'
+def _load_print_stamp(private_files_path):
+    """Load the optional site-private stamp asset for print output only."""
+    stamp_path = Path(private_files_path) / 'petrol_zone_stamp.png'
     if not stamp_path.is_file():
         return None
     return 'data:image/png;base64,' + base64.b64encode(stamp_path.read_bytes()).decode()
@@ -114,7 +114,7 @@ def get_contract_print_context(doc):
         format_money=fmt_money,
         clauses=clauses_for_contract(doc),
         logo='data:image/png;base64,'+base64.b64encode((path/'public/petrol_zone_logo.png').read_bytes()).decode(),
-        stamp=_load_print_stamp(path))
+        stamp=_load_print_stamp(frappe.get_site_path('private', 'files')))
     return context
 
 

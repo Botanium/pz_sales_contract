@@ -24,7 +24,7 @@ Clauses 10–12 and 14 also supply legal remedies, liability limits, cancellatio
 
 ## Print-only stamp
 
-The user-provided Petrol Zone stamp is cropped to its blue-seal boundary with a 12-pixel white margin. A pixel comparison verified the crop matches the corresponding source pixels exactly; no text, shape, ink or color was redrawn. The PNG is stored privately at `pz_sales_contract/private/images/petrol_zone_stamp.png` and embedded only in the seller signature area at print time. No DocType field or public asset route is added. If the image is missing, printing continues without it. It is a company stamp graphic, not a signature.
+The user-provided Petrol Zone stamp is cropped to its blue-seal boundary with a 12-pixel white margin. A pixel comparison verified the crop matches the corresponding source pixels exactly; no text, shape, ink or color was redrawn. The crop is kept outside the public app source and must be staged by an authorized site operator at `sites/<site>/private/files/petrol_zone_stamp.png`. The print context reads that site-private file only after contract read/print permission checks and embeds it only in the seller signature area. No DocType field or public asset route is added. If the file is missing, printing continues without it. It is a company stamp graphic, not a signature. This change does not stage the image on any installed site.
 
 ## Exact v3 contract terms
 

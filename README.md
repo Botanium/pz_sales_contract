@@ -26,7 +26,7 @@ The optional child `specification_reference` value is retained in stored history
 
 The 30%/70% amounts displayed by the form remain calculated on discounted goods only, with taxes entered later on the linked Sales Order. The supplied v3 terms also describe the final balance as the final invoice total less the advance; that input/calculation mismatch is recorded in the print-copy review rather than filled with a new default. Historical contracts retain their native tax rows. Each contract line selects an active Bitumen Grade master, independent of Item, and the link maps to Sales Order Item `custom_bitumen_grade`. The contract keeps a text snapshot for print/history: the master’s `grade_code` is used when that field exists, otherwise the canonical Link name is used. Previously saved free-text Grade values remain viewable and savable as history; an unchanged disabled Grade link remains available on a saved contract, while a new line cannot use disabled or missing masters. If a previously linked Grade master is missing, saving the unchanged contract clears that stale Link but retains its text snapshot. No mixed-UOM quantity total is shown.
 
-The supplied company stamp is embedded in the seller signature area by the print context only. It is not a contract-form field and the PNG is stored under the app's private path; if absent, the print omits the image without failing.
+The supplied company stamp is embedded in the seller signature area by the print context only. It is not a contract-form field or part of the public app package. An authorized site operator must place the cropped image at `sites/<site>/private/files/petrol_zone_stamp.png`; if absent, the print omits the image without failing.
 
 ## Optional company defaults
 

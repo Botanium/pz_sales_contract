@@ -6,4 +6,4 @@ The supplied PDF references a Commercial Schedule but does not provide its field
 
 Master SHA-256: `4f906c9acc45bc67cc2a3f3e19879062c4679c4aef6c5d2372c26834c97cc328`
 
-Logo is the supplied 213 × 150 PNG. The low-resolution original is used at a restrained size to preserve its appearance. The provided Petrol Zone company stamp is cropped only to remove outer white page area and embedded in the print-only seller signature block; no document signature is generated. No source Library identifiers or customer documents are published.
+Logo is the supplied 213 × 150 PNG. The low-resolution original is used at a restrained size to preserve its appearance. The provided Petrol Zone company stamp is cropped only to remove outer white page area and is read from site-private storage for the print-only seller signature block; no document signature is generated. Stamp bytes are not included in this public repository. No source Library identifiers or customer documents are published.

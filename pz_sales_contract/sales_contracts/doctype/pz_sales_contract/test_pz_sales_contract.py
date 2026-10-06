@@ -212,8 +212,15 @@ class TestPZSalesContract(IntegrationTestCase):
             d.save()
 
     def test_missing_optional_print_stamp_is_safe(self):
+        import base64
+        from tempfile import TemporaryDirectory
         from pz_sales_contract.printing import _load_print_stamp
-        self.assertIsNone(_load_print_stamp(Path('/tmp/pz-contract-stamp-asset-does-not-exist')))
+        with TemporaryDirectory() as directory:
+            stamp_path = Path(directory) / 'petrol_zone_stamp.png'
+            self.assertIsNone(_load_print_stamp(directory))
+            stamp_path.write_bytes(b'synthetic print-only stamp fixture')
+            expected = 'data:image/png;base64,' + base64.b64encode(stamp_path.read_bytes()).decode()
+            self.assertEqual(_load_print_stamp(directory), expected)
 
     def test_simplified_contract_rejects_specifications_omitted_from_its_print(self):
         doc = contract(insert=False, specifications=[dict(item_code='PZ Synthetic Bitumen',
@@ -1709,14 +1716,16 @@ class TestPZSalesContract(IntegrationTestCase):
 
         doc = contract(print_as_draft=1)
         expected_clauses = json.loads((Path(__file__).resolve().parents[3] / 'terms.json').read_text())
-        stamp_path = Path(__file__).resolve().parents[3] / 'private' / 'images' / 'petrol_zone_stamp.png'
-        expected_stamp = 'data:image/png;base64,' + base64.b64encode(stamp_path.read_bytes()).decode()
-        html_view = get_html_and_style(doc=json.dumps(doc.as_dict(), default=str),
-            print_format='Petrol Zone Sales Contract')['html']
-        custom_print = frappe.get_print(doc.doctype, doc.name, print_format='Petrol Zone Sales Contract')
-        with patch('frappe.utils.pdf.get_pdf', return_value=b'%PDF-synthetic-boundary') as binary:
-            download_pdf(doc.doctype, doc.name, format='Petrol Zone Sales Contract',
-                pdf_generator='wkhtmltopdf')
+        expected_stamp = 'data:image/png;base64,' + base64.b64encode(
+            b'synthetic site-private print fixture'
+        ).decode()
+        with patch('pz_sales_contract.printing._load_print_stamp', return_value=expected_stamp):
+            html_view = get_html_and_style(doc=json.dumps(doc.as_dict(), default=str),
+                print_format='Petrol Zone Sales Contract')['html']
+            custom_print = frappe.get_print(doc.doctype, doc.name, print_format='Petrol Zone Sales Contract')
+            with patch('frappe.utils.pdf.get_pdf', return_value=b'%PDF-synthetic-boundary') as binary:
+                download_pdf(doc.doctype, doc.name, format='Petrol Zone Sales Contract',
+                    pdf_generator='wkhtmltopdf')
         native_pdf_html = binary.call_args.args[0]
 
         for rendered in (html_view, custom_print, native_pdf_html):

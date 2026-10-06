@@ -188,9 +188,10 @@ class TestContractFormDefinition(unittest.TestCase):
         self.assertNotIn("stamp_image", fieldnames)
         printing = (ROOT / "pz_sales_contract/printing.py").read_text()
         template = (ROOT / "pz_sales_contract/templates/contract.html").read_text()
-        self.assertIn("def _load_print_stamp(app_path):", printing)
+        self.assertIn("def _load_print_stamp(private_files_path):", printing)
         self.assertIn("if not stamp_path.is_file():", printing)
-        self.assertIn("stamp=_load_print_stamp(path)", printing)
+        self.assertIn("frappe.get_site_path('private', 'files')", printing)
+        self.assertIn("stamp=_load_print_stamp(frappe.get_site_path('private', 'files'))", printing)
         self.assertIn("{% if stamp %}<td class=\"seller-stamp-cell\"><img class=\"seller-stamp\"", template)
         self.assertIn("Petrol Zone Company stamp", template)
 
