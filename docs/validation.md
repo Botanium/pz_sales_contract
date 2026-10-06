@@ -2,10 +2,10 @@
 
 ## Manual print draft policy (2026-10-06)
 
-New v3 and historical contracts use the saved `Print as Draft` checkbox, default unchecked, to control the printed DRAFT marker. Customer history and receipt state do not set the marker or block contract save, submit or print. Cancellation takes precedence in the print. The v3 print's displayed 30% / 70% amounts remain calculated from discounted goods; archived v2 contracts keep their saved two-clause terms. The marker change removes payment-status warnings and automatic display decisions, not the displayed payment calculation. Earlier sections below record checks under the policy active at the time and are historical evidence, not the current behavior.
+New v4, archived v2/v3 and historical contracts use the saved `Print as Draft` checkbox, default unchecked, to control the printed DRAFT marker. Customer history and receipt state do not set the marker or block contract save, submit or print. Cancellation takes precedence in the print. The v4 print's displayed 30% / 70% amounts remain calculated from discounted goods; archived v2 contracts keep their saved two-clause terms and v3 contracts retain their saved wording. The marker change removes payment-status warnings and automatic display decisions, not the displayed payment calculation. Earlier sections below record checks under the policy active at the time and are historical evidence, not the current behavior.
 
-- Local checks pass: **45 Python unit tests**, **39 Desk behavior tests**, and **15 native Frappe JavaScript save tests**, plus Python compilation, JavaScript syntax checks and `git diff --check`.
-- This Mini has no local Frappe bench/database for the native server integration suite. The pushed commit's disposable v16 GitHub CI result is required before merge. PDF route tests verify native HTML rendering while mocking only the final wkhtmltopdf binary conversion boundary; no local PDF binary run is claimed.
+- Local checks pass: **46 Python unit/form-definition tests** and **42 Desk behavior tests**, plus Python compilation, JSON parsing and `git diff --check`. Native Frappe integration and save-pipeline tests have not run on this Mini.
+- This Mini has no local Frappe bench/database for the native server integration suite. The follow-up branch's disposable v16 GitHub CI result is required before merge. CI PDF route tests verify native HTML rendering while mocking only the final wkhtmltopdf binary conversion boundary; no local PDF binary run is claimed.
 - No production install, contract/payment record, receipt, ledger or permission change was made.
 
 ## Daily-entry form follow-up (2026-10-02)

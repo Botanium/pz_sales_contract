@@ -122,7 +122,7 @@
 <tr><td class="schedule-label">Agreed holiday calendar</td><td>{% if holiday.name %}{{ holiday.name|e }} · Valid {{ holiday.from_date|e }} to {{ holiday.to_date|e }}<br>{% for h in holiday.holidays|sort(attribute='holiday_date') %}{{ h.holiday_date|e }}: {{ h.description|striptags|e }}{% if not loop.last %}; {% endif %}{% else %}No excluded holiday dates in this agreed calendar.{% endfor %}{% else %}Not recorded{% endif %}</td></tr>
 <tr><td class="schedule-label">Collection grace</td><td>{{ doc.collection_grace|e }} {{ doc.grace_unit|e }}</td></tr>
 </tbody></table>
-<p class="quiet">The 24-business-hour period accumulates open hours in this agreed calendar. Receipt outside business hours starts at the next opening time. The collection grace period does not extend the payment deadline.</p>
+<p class="quiet">The 24-business-hour period accumulates open hours in this agreed calendar. Receipt outside those hours starts at the next opening time. The collection grace period does not extend the payment deadline.</p>
 </section>
 {% for start, end in [(0,8),(8,15)] %}
 <section class="page terms">{{ header('Contract terms') }}<h2>Contract Terms</h2>

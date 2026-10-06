@@ -8,14 +8,16 @@ import frappe
 
 LEGACY_TERMS_V1_SHA256 = 'af5bca40d97909791820b4eb7d2031f4765c863e7d0cad44eef8d5ed5c3937f7'
 ARCHIVED_TERMS_V2_SHA256 = 'f09bfdc955dd477ca151a848a9b5b934dd9f9ea41583c3aeeb67ffd02571c461'
-CURRENT_TERMS_V3_SHA256 = '2d7f41f3d77b49af758d65fb927e1f42b08c88674f2d409c1bc50ff2c8abb577'
-CURRENT_TERMS_VERSION = 'v3'
-SIMPLE_PRINT_TERMS_VERSIONS = frozenset({'v2', CURRENT_TERMS_VERSION})
+ARCHIVED_TERMS_V3_SHA256 = '2d7f41f3d77b49af758d65fb927e1f42b08c88674f2d409c1bc50ff2c8abb577'
+CURRENT_TERMS_V4_SHA256 = 'af5bca40d97909791820b4eb7d2031f4765c863e7d0cad44eef8d5ed5c3937f7'
+CURRENT_TERMS_VERSION = 'v4'
+SIMPLE_PRINT_TERMS_VERSIONS = frozenset({'v2', 'v3', CURRENT_TERMS_VERSION})
 
 PINNED_TERMS = {
     'v1': ('v1.json', LEGACY_TERMS_V1_SHA256),
     'v2': ('v2.json', ARCHIVED_TERMS_V2_SHA256),
-    'v3': ('v3.json', CURRENT_TERMS_V3_SHA256),
+    'v3': ('v3.json', ARCHIVED_TERMS_V3_SHA256),
+    'v4': ('v4.json', CURRENT_TERMS_V4_SHA256),
 }
 
 
@@ -69,7 +71,7 @@ def snapshot_for_new_contract(original=None):
 
 
 def clauses_for_contract(doc):
-    """Render saved clauses; pre-snapshot records use the immutable v1 baseline."""
+    """Render saved clauses or the pinned version archive for a missing snapshot."""
     snapshot = doc.get('terms_snapshot')
     if not snapshot:
         snapshot = _snapshot_for_version(doc.get('terms_version'))

@@ -75,7 +75,7 @@ test("legacy contracts retain access to historical specifications", async () => 
   assert.equal(ui.fieldProperties["selling_price_list.hidden"], false);
 });
 
-for (const version of ["v2", "v3"]) {
+for (const version of ["v2", "v3", "v4"]) {
   test(`saved ${version} contracts keep the simplified specification editor hidden`, async () => {
     const ui = desk(newDoc(`${version}-saved`, { __islocal: 0, terms_version: version }));
     await ui.refresh();

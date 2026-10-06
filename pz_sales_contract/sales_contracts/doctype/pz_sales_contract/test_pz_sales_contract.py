@@ -184,13 +184,15 @@ class TestPZSalesContract(IntegrationTestCase):
         with patch.object(frappe, 'get_meta', return_value=no_code_meta):
             self.assertEqual(grade_snapshot(grade), 'PZ Synthetic Grade Name')
 
-    def test_contract_terms_are_snapshotted_and_legacy_records_use_frozen_v1(self):
+    def test_contract_terms_are_snapshotted_and_archived_versions_keep_their_wording(self):
         app_path = Path(__file__).resolve().parents[3]
         active_snapshot = (app_path / 'terms.json').read_text(encoding='utf-8')
         frozen_snapshot = (app_path / 'terms_versions' / 'v1.json').read_text(encoding='utf-8')
         frozen_v2 = (app_path / 'terms_versions' / 'v2.json').read_text(encoding='utf-8')
         frozen_v3 = (app_path / 'terms_versions' / 'v3.json').read_text(encoding='utf-8')
-        self.assertEqual(active_snapshot, frozen_v3)
+        frozen_v4 = (app_path / 'terms_versions' / 'v4.json').read_text(encoding='utf-8')
+        self.assertEqual(active_snapshot, frozen_v4)
+        self.assertNotEqual(active_snapshot, frozen_v3)
         d = contract()
         self.assertEqual(d.terms_version, CURRENT_TERMS_VERSION)
         self.assertEqual(d.terms_snapshot, active_snapshot)
@@ -202,6 +204,14 @@ class TestPZSalesContract(IntegrationTestCase):
         v2_source = SimpleNamespace(get=lambda key: {'terms_version': 'v2', 'terms_snapshot': None}.get(key))
         self.assertEqual(snapshot_for_new_contract(v2_source), frozen_v2)
         self.assertEqual(clauses_for_contract(v2_source), json.loads(frozen_v2))
+
+        v3_source = SimpleNamespace(get=lambda key: {'terms_version': 'v3', 'terms_snapshot': None}.get(key))
+        self.assertEqual(snapshot_for_new_contract(v3_source), frozen_v3)
+        self.assertEqual(clauses_for_contract(v3_source), json.loads(frozen_v3))
+        self.assertIn('outside business hours', clauses_for_contract(v3_source)[3])
+        self.assertIn('outside those hours', clauses_for_contract(d)[3])
+        saved_v3 = SimpleNamespace(get=lambda key: {'terms_version': 'v3', 'terms_snapshot': frozen_v3}.get(key))
+        self.assertEqual(snapshot_for_new_contract(saved_v3), frozen_v3)
 
         legacy_source = SimpleNamespace(get=lambda key: None)
         self.assertEqual(snapshot_for_new_contract(legacy_source), frozen_snapshot)
@@ -435,7 +445,7 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertEqual(doc.bank_receiving_account, 'PZ Synthetic Bank - PZT')
         self.assertIsNone(doc.governing_law)
 
-    def test_new_v3_clears_company_defaults_and_explicit_hidden_schedule_payloads(self):
+    def test_new_v4_clears_company_defaults_and_explicit_hidden_schedule_payloads(self):
         self.clear_synthetic_company_defaults()
         self.synthetic_company_defaults().insert()
         doc = contract(insert=False)
@@ -1708,7 +1718,7 @@ class TestPZSalesContract(IntegrationTestCase):
                         self.assertIn('30% advance', html)
                         self.assertIn('70% balance', html)
 
-    def test_v3_terms_and_print_stamp_match_html_custom_print_and_native_pdf_input(self):
+    def test_v4_terms_and_print_stamp_match_html_custom_print_and_native_pdf_input(self):
         import base64
         from bs4 import BeautifulSoup
         from frappe.www.printview import get_html_and_style
