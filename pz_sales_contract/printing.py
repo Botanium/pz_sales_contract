@@ -6,7 +6,6 @@ from frappe.utils import fmt_money
 from frappe.utils.pdf import pdf_body_html as default_body
 
 from pz_sales_contract.contract_terms import CURRENT_TERMS_VERSION, clauses_for_contract
-from pz_sales_contract.payments import payment_status
 from pz_sales_contract.parties import PAYMENT_INSTRUCTION_FIELDS
 from pz_sales_contract.sales_contracts.doctype.pz_sales_contract.pz_sales_contract import ITEM_ONLY_DRAFT_SO_SCOPE
 
@@ -100,15 +99,13 @@ def get_contract_print_context(doc):
                 'grade': row.grade,
                 'specification_rows': specification_rows.get(row.item_code, []),
             })
-    sales_order_status = frappe.db.get_value('Sales Order', doc.sales_order, 'docstatus') if doc.sales_order else None
     is_item_only_draft = doc.get('contract_scope_version') == ITEM_ONLY_DRAFT_SO_SCOPE
     simple_print = doc.get('terms_version') == CURRENT_TERMS_VERSION
-    context = dict(payment_instructions=[(label, doc.get(key)) for key, label in PAYMENT_INSTRUCTION_FIELDS.items() if str(doc.get(key) or '').strip()], doc=doc, state=payment_status(doc), holiday=holiday, spec_items=spec_items,
-        is_item_only_draft=is_item_only_draft, simple_print=simple_print, sales_order_status=sales_order_status,
+    context = dict(payment_instructions=[(label, doc.get(key)) for key, label in PAYMENT_INSTRUCTION_FIELDS.items() if str(doc.get(key) or '').strip()], doc=doc, holiday=holiday, spec_items=spec_items,
+        is_item_only_draft=is_item_only_draft, simple_print=simple_print,
         format_money=fmt_money,
         clauses=clauses_for_contract(doc),
-        logo='data:image/png;base64,'+base64.b64encode((path/'public/petrol_zone_logo.png').read_bytes()).decode(),
-        erp_status=['Unsubmitted', 'Submitted', 'Cancelled'][int(doc.docstatus)])
+        logo='data:image/png;base64,'+base64.b64encode((path/'public/petrol_zone_logo.png').read_bytes()).decode())
     return context
 
 

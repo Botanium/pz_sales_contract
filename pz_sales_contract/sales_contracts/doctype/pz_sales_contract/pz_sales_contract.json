@@ -24,6 +24,7 @@
     "grand_total",
     "advance_required",
     "balance_required",
+    "print_as_draft",
     "in_words",
     "delivery",
     "incoterm",
@@ -306,6 +307,15 @@
       "fieldtype": "Currency",
       "options": "currency",
       "read_only": 1
+    },
+    {
+      "fieldname": "print_as_draft",
+      "label": "Print as Draft",
+      "fieldtype": "Check",
+      "default": "0",
+      "no_copy": 1,
+      "allow_on_submit": 1,
+      "description": "Check to print DRAFT on this contract. The mark is set manually and does not depend on customer history or payment records."
     },
     {
       "fieldname": "in_words",

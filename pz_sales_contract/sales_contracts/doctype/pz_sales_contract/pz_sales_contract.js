@@ -595,7 +595,6 @@ frappe.ui.form.on("PZ Sales Contract", {
     for (const row of frm.doc.items || []) {
       contractChildLookupState(row).gradeMaster = row.grade_master || null;
     }
-    frm.set_intro("The first contract family saved using this app carries DRAFT until the full 30% advance has qualifying bank reconciliation or agreed cash receipt evidence. Finance can register verified prior contracts through PZ Customer History. ERP submission is separate. Save before printing.");
     renderDailyChecklist(frm);
     const doc = frm.doc;
     Promise.resolve(resumeCompanySpecificClear(frm)).then(() => {
@@ -620,12 +619,6 @@ frappe.ui.form.on("PZ Sales Contract", {
         }));
       }, __("Setup"));
     }
-    if (!frm.is_new()) frm.add_custom_button("Advance evidence", () => {
-      frappe.call({ method: "pz_sales_contract.payments.get_status", args: { name: frm.doc.name }, callback(r) {
-        const s = r.message;
-        frappe.msgprint({ title: "Server payment evidence", message: `${s.payment_draft ? "DRAFT — advance pending" : "Advance confirmed / established or later contract"}<br>Confirmed receipt allocation: ${format_currency(s.confirmed, frm.doc.currency, s.currency_precision)}<br>Required advance: ${format_currency(s.required, frm.doc.currency, s.currency_precision)}<br>ERP status: ${["Unsubmitted", "Submitted", "Cancelled"][frm.doc.docstatus]}` });
-      } });
-    });
   },
   customer(frm) {
     if (frm.is_new() && !frm.doc.amended_from) {

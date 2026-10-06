@@ -417,7 +417,7 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertEqual(doc.bank_receiving_account, 'PZ Synthetic Bank - PZT')
         self.assertIsNone(doc.governing_law)
 
-    def test_hidden_schedule_defaults_are_not_copied_to_new_contracts(self):
+    def test_new_v2_clears_company_defaults_and_explicit_hidden_schedule_payloads(self):
         self.clear_synthetic_company_defaults()
         self.synthetic_company_defaults().insert()
         doc = contract(insert=False)
@@ -435,6 +435,8 @@ class TestPZSalesContract(IntegrationTestCase):
                 value = f'Synthetic explicit payload for {fieldname}'
             doc.set(fieldname, value)
         doc.insert()
+        self.assertEqual(doc.terms_version, CURRENT_TERMS_VERSION)
+        self.assertEqual(doc.contract_scope_version, ITEM_ONLY_DRAFT_SO_SCOPE)
         for fieldname in HISTORICAL_CONTRACT_FIELDS:
             self.assertIsNone(doc.get(fieldname), fieldname)
 
@@ -838,8 +840,10 @@ class TestPZSalesContract(IntegrationTestCase):
                         for r in soup.select('.totals tr')}
                     for key,value in [('Subtotal',total),('Contract Amount · USD',total),('30% advance',required),('70% balance',balance)]:
                         self.assertEqual(totals[key],f'{value:.{digits}f}')
-                    self.assertIn(f'30% advance: {required:.{digits}f}',soup.get_text())
-                    self.assertIn(f'Confirmed receipt allocation: {partial:.{digits}f}',soup.get_text())
+                    # The amount remains a visible contract total, while finance
+                    # evidence no longer appears in the print or controls its mark.
+                    self.assertNotIn('Confirmed receipt allocation',soup.get_text())
+                    self.assertNotIn('30% advance:',soup.get_text())
                     status=get_status(d.name)
                     self.assertEqual((status.currency_precision,status.required,status.confirmed),(digits,required,partial))
                     receipt(d,shortfall,cash=True)
@@ -910,7 +914,7 @@ class TestPZSalesContract(IntegrationTestCase):
             seller_signatory='Synthetic approved signer at creation',
             cash_receiving_account=None,
         ).insert()
-        d=contract(submit=True, seller_signatory=None, cash_receiving_account=None)
+        d=contract(submit=True, seller_signatory=None, cash_receiving_account=None, print_as_draft=1)
         self.assertEqual(d.seller_signatory, 'Synthetic approved signer at creation')
         self.assertIsNone(d.cash_receiving_account)
         frappe.db.set_value('PZ Contract Item', d.items[0].name,
@@ -929,6 +933,9 @@ class TestPZSalesContract(IntegrationTestCase):
         d.db_set('advance_deadline', '2026-10-02T09:00:00+03:00')
         d.reload()
         amendment=frappe.copy_doc(d)
+        # Server-side frappe.copy_doc copies fields directly; native Desk uses
+        # DocField.no_copy when it builds an amendment. Simulate that copy rule.
+        amendment.print_as_draft = 0
         amendment.docstatus=0
         amendment.amended_from=d.name
         amendment.sales_order=None
@@ -941,6 +948,8 @@ class TestPZSalesContract(IntegrationTestCase):
             denied.insert()
         frappe.set_user('Administrator')
         amendment.insert()
+        self.assertEqual(amendment.print_as_draft, 0)
+        self.assertEqual(d.reload().print_as_draft, 1)
         self.assertEqual(amendment.terms_version, CURRENT_TERMS_VERSION)
         self.assertEqual(amendment.items[0].packaging, 'Historical amendment snapshot')
         self.assertEqual(amendment.governing_law, 'Synthetic historical law retained on amendment')
@@ -998,9 +1007,10 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertEqual(frappe.db.get_value('Sales Order',d.sales_order,'docstatus'),0)
 
     def test_print_standard_forged_payload_and_cancelled(self):
-        d=contract(submit=True)
+        d=contract(submit=True, print_as_draft=1)
         html=frappe.get_print('PZ Sales Contract',d.name,print_format='Standard')
-        self.assertIn('DRAFT — FIRST ADVANCE NOT CONFIRMED',html)
+        self.assertIn('>DRAFT<',html)
+        self.assertNotIn('FIRST ADVANCE',html)
         clauses = json.loads((Path(__file__).resolve().parents[3] / 'terms.json').read_text())
         self.assertEqual(len(clauses), 2)
         for number, clause in enumerate(clauses, start=1):
@@ -1021,12 +1031,15 @@ class TestPZSalesContract(IntegrationTestCase):
         forged['first_family']='FORGED FAMILY'
         output=get_html_and_style(doc=json.dumps(forged,default=str),print_format='Standard')['html']
         self.assertNotIn('FORGED BUYER',output)
-        self.assertIn('DRAFT — FIRST ADVANCE NOT CONFIRMED',output)
+        self.assertIn('>DRAFT<',output)
         paid=receipt(d,300,cash=True)
-        self.assertNotIn('DRAFT — FIRST ADVANCE NOT CONFIRMED',frappe.get_print('PZ Sales Contract',d.name))
+        # Payment arrival does not change the operator's saved print choice.
+        self.assertIn('>DRAFT<',frappe.get_print('PZ Sales Contract',d.name))
         paid.cancel()
         d.cancel()
-        self.assertIn('CANCELLED CONTRACT',frappe.get_print('PZ Sales Contract',d.name))
+        cancelled = frappe.get_print('PZ Sales Contract',d.name)
+        self.assertIn('CANCELLED CONTRACT',cancelled)
+        self.assertNotIn('>DRAFT<',cancelled)
 
     def test_pre_version_contract_keeps_legacy_print_and_v1_terms(self):
         d = contract()
@@ -1042,7 +1055,7 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertIn('Commercial Schedule', html)
         self.assertIn('Appendix A · Agreed Product Specification', html)
         self.assertIn('Order and Collection Record', html)
-        self.assertIn('PAYMENT REQUIRED WITHIN 24 BUSINESS HOURS', html)
+        self.assertNotIn('PAYMENT REQUIRED WITHIN 24 BUSINESS HOURS', html)
         self.assertIn('15. Authority, Law and Complete Agreement.', html)
 
     def test_schedule_deadlines_not_clock_days(self):
@@ -1333,7 +1346,11 @@ class TestPZSalesContract(IntegrationTestCase):
             self.assertEqual(current.precision('advance_required'),0)
             self.assertEqual(current.advance_required,30)
             self.assertEqual(get_status(current.name).currency_precision,0)
-            self.assertIn('30% advance: 30',frappe.get_print(current.doctype,current.name))
+            from bs4 import BeautifulSoup
+            printed = BeautifulSoup(frappe.get_print(current.doctype,current.name), 'html.parser')
+            totals = {row.select('td')[0].get_text(strip=True): row.select('td')[1].get_text(strip=True)
+                for row in printed.select('.totals tr')}
+            self.assertEqual(totals['30% advance'], '30')
             receipt(current,29,cash=True)
             self.assertTrue(payment_status(current).payment_draft)
             receipt(current,1,cash=True)
@@ -1619,41 +1636,44 @@ class TestPZSalesContract(IntegrationTestCase):
                 with self.assertRaises(frappe.ValidationError):
                     doc.insert()
 
-    def test_native_include_and_pdf_context_survive_delegating_renderer_hook(self):
+    def test_manual_print_draft_is_independent_of_customer_and_payment_in_all_print_routes(self):
         from frappe.www.printview import get_html_and_style
         from frappe.utils.print_format import download_pdf
         native_hooks = frappe.get_hooks
 
         def delegating_hooks(hook=None, *args, **kwargs):
-            # Print Designer's reported fallback delegates to this native body
-            # renderer instead of calling this app's pdf_body_html hook.
             if hook == 'pdf_body_html':
                 return ['frappe.utils.pdf.pdf_body_html']
             return native_hooks(hook, *args, **kwargs)
 
-        draft = contract()
-        linked_draft = contract(submit=True, submit_sales_order=False)
-        unpaid = contract(submit=True)
-        paid = contract(submit=True)
-        receipt(paid, 300, cash=True)
-        cancelled = contract(submit=True)
-        cancelled.cancel()
+        first_saved = contract(print_as_draft=0)
+        checked_unpaid = contract(print_as_draft=1)
+        unchecked_unpaid = contract(submit=True, submit_sales_order=False, print_as_draft=0)
+        checked_paid = contract(submit=True, print_as_draft=1)
+        receipt(checked_paid, 300, cash=True)
+        unchecked_paid = contract(submit=True, print_as_draft=0)
+        receipt(unchecked_paid, 300, cash=True)
+        existing_customer_unpaid = contract(customer=first_saved.customer,
+            submit=True, submit_sales_order=False, print_as_draft=0)
+        cancelled_checked = contract(submit=True, print_as_draft=1)
+        cancelled_checked.cancel()
         cases = [
-            (draft, 'ERP document: Unsubmitted', True),
-            (linked_draft, 'LINKED SALES ORDER DRAFT', True),
-            (unpaid, 'ERP document: Submitted', True),
-            (paid, 'Confirmed receipt allocation: 300', False),
-            (cancelled, 'CANCELLED CONTRACT', False),
+            (first_saved, False, False),
+            (checked_unpaid, True, False),
+            (unchecked_unpaid, False, False),
+            (checked_paid, True, False),
+            (unchecked_paid, False, False),
+            (existing_customer_unpaid, False, False),
+            (cancelled_checked, False, True),
         ]
         with patch('frappe.get_hooks', side_effect=delegating_hooks):
-            for doc, expected, warning in cases:
+            for doc, marked, cancelled in cases:
                 with self.subTest(contract=doc.name):
                     forged = doc.as_dict()
-                    forged.update(customer_name='FORGED BUYER', docstatus=1)
+                    forged.update(customer_name='FORGED BUYER', print_as_draft=not marked,
+                        docstatus=0 if cancelled else doc.docstatus)
                     preview = get_html_and_style(doc=json.dumps(forged, default=str),
                         print_format='Petrol Zone Sales Contract')['html']
-                    # Keep native PrintView and PDF routing real; capture only
-                    # the binary conversion boundary (wkhtmltopdf isn't in CI).
                     with patch('frappe.utils.pdf.get_pdf', return_value=b'%PDF-synthetic-boundary') as binary:
                         download_pdf(doc.doctype, doc.name, format='Petrol Zone Sales Contract',
                             pdf_generator='wkhtmltopdf')
@@ -1661,21 +1681,53 @@ class TestPZSalesContract(IntegrationTestCase):
                     self.assertEqual(frappe.local.response.filecontent, b'%PDF-synthetic-boundary')
                     pdf_html = binary.call_args.args[0]
                     for html in (preview, pdf_html):
-                        self.assertIn(expected, html)
                         self.assertNotIn('FORGED BUYER', html)
-                        self.assertEqual('DRAFT — FIRST ADVANCE NOT CONFIRMED' in html, warning)
-                        self.assertIn('Contract Amount · USD', html)
+                        self.assertEqual('>DRAFT<' in html, marked and not cancelled)
+                        self.assertEqual('CANCELLED CONTRACT' in html, cancelled)
+                        self.assertNotIn('FIRST ADVANCE', html)
+                        self.assertNotIn('advance pending', html.lower())
+                        self.assertNotIn('Confirmed receipt allocation', html)
+                        self.assertNotIn('This printout records ERP receipt', html)
+                        self.assertIn('30% advance', html)
+                        self.assertIn('70% balance', html)
 
-    def test_contract_template_reloads_state_and_enforces_permissions_and_saved_status(self):
+    def test_print_as_draft_can_be_changed_after_submit_and_is_not_changed_by_receipts(self):
+        doc = contract(submit=True, print_as_draft=0)
+        self.assertEqual(doc.reload().print_as_draft, 0)
+        doc.print_as_draft = 1
+        doc.save()
+        self.assertEqual(doc.reload().print_as_draft, 1)
+        receipt(doc, 300, cash=True)
+        self.assertEqual(doc.reload().print_as_draft, 1)
+        html = frappe.get_print(doc.doctype, doc.name, print_format='Standard')
+        self.assertIn('>DRAFT<', html)
+        doc.print_as_draft = 0
+        doc.save()
+        self.assertEqual(doc.reload().print_as_draft, 0)
+        self.assertNotIn('>DRAFT<', frappe.get_print(doc.doctype, doc.name, print_format='Standard'))
+
+    def test_print_as_draft_defaults_unchecked_and_legacy_records_do_not_infer_payment_state(self):
+        field = frappe.get_meta('PZ Sales Contract').get_field('print_as_draft')
+        self.assertEqual((field.fieldtype, int(field.default or 0)), ('Check', 0))
+        legacy = contract()
+        legacy.db_set('terms_version', None)
+        legacy.db_set('contract_scope_version', None)
+        legacy.db_set('terms_snapshot', None)
+        self.assertEqual(legacy.reload().print_as_draft, 0)
+        html = frappe.get_print(legacy.doctype, legacy.name, print_format='Standard')
+        self.assertNotIn('>DRAFT<', html)
+        legacy.db_set('print_as_draft', 1)
+        self.assertIn('>DRAFT<', frappe.get_print(legacy.doctype, legacy.name, print_format='Standard'))
+
+    def test_contract_template_reloads_print_choice_and_enforces_permissions_and_saved_status(self):
         from pz_sales_contract.printing import get_contract_print_context
-        doc = contract(submit=True)
-        # Calling the installed include directly has exactly the minimal context
-        # passed by native pdf_body_html, and cannot accept a forged paid state.
+        doc = contract(submit=True, print_as_draft=1)
+        # The installed include ignores a caller's forged print choice and status.
         template = frappe.get_jenv().from_string(
             '{% include "pz_sales_contract/templates/contract.html" %}')
-        html = template.render(doc=doc, state=frappe._dict(payment_draft=False, confirmed=1000))
-        self.assertIn('DRAFT — FIRST ADVANCE NOT CONFIRMED', html)
-        self.assertNotIn('Confirmed receipt allocation: 1,000', html)
+        html = template.render(doc=doc.as_dict(), print_as_draft=0, payment_draft=False, confirmed=1000)
+        self.assertIn('>DRAFT<', html)
+        self.assertNotIn('Confirmed receipt allocation', html)
         with self.assertRaises(frappe.DoesNotExistError):
             get_contract_print_context(frappe._dict(doctype=doc.doctype, name='UNSAVED-SYNTHETIC'))
         try:
