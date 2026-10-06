@@ -931,6 +931,9 @@ class TestPZSalesContract(IntegrationTestCase):
         d.db_set('advance_deadline', '2026-10-02T09:00:00+03:00')
         d.reload()
         amendment=frappe.copy_doc(d)
+        # Server-side frappe.copy_doc copies fields directly; native Desk uses
+        # DocField.no_copy when it builds an amendment. Simulate that copy rule.
+        amendment.print_as_draft = 0
         amendment.docstatus=0
         amendment.amended_from=d.name
         amendment.sales_order=None
@@ -1341,7 +1344,11 @@ class TestPZSalesContract(IntegrationTestCase):
             self.assertEqual(current.precision('advance_required'),0)
             self.assertEqual(current.advance_required,30)
             self.assertEqual(get_status(current.name).currency_precision,0)
-            self.assertIn('30% advance: 30',frappe.get_print(current.doctype,current.name))
+            from bs4 import BeautifulSoup
+            printed = BeautifulSoup(frappe.get_print(current.doctype,current.name), 'html.parser')
+            totals = {row.select('td')[0].get_text(strip=True): row.select('td')[1].get_text(strip=True)
+                for row in printed.select('.totals tr')}
+            self.assertEqual(totals['30% advance'], '30')
             receipt(current,29,cash=True)
             self.assertTrue(payment_status(current).payment_draft)
             receipt(current,1,cash=True)

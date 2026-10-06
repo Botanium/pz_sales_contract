@@ -33,6 +33,7 @@ function nativeDesk({ nativeRequests = false } = {}) {
   const ctx = {
     console: { log() {}, error(error) { errors.push(error); } },
     Promise, Set, WeakMap, Object, Array, JSON, locals,
+    cint: (value) => Number.parseInt(value, 10) || 0,
     cur_frm: null, window: {}, document: {}, history: { replaceState() {} },
     __: (value) => value, toTitle: (value) => value,
     is_null: (value) => value === undefined || value === null || value === "",
@@ -377,4 +378,9 @@ test("native Save persists the manually selected Print as Draft checkbox without
   await ui.save();
   assert.equal(ui.saves.length, 1);
   assert.equal(ui.saves[0].print_as_draft, 1);
+});
+
+test("native Frappe amendment copy treats Print as Draft as a no-copy field", () => {
+  const ui = nativeDesk();
+  assert.ok(ui.frappe.model.get_no_copy_list("PZ Sales Contract").includes("print_as_draft"));
 });
