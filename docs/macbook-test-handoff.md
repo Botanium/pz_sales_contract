@@ -31,7 +31,7 @@ Use an empty/disposable site with the app's synthetic fixture setup. Capture the
 
 - Switch Company on an unsaved contract; confirm prior seller/account defaults clear, the new Company's approved defaults load, and no legal schedule or Incoterm choice is silently selected.
 - Verify customer, company, date, price list, signer, position and account fields save and reload. Confirm hidden legal defaults stay blank for new contracts.
-- Generate native PDF with the bench wkhtmltopdf route and inspect pagination, signatures, the active v3 terms snapshot and the absence of removed schedule/specification/approval sections. Generate an archived v2 snapshot and a legacy v1 print; confirm each retains its saved wording and layout.
+- Generate native PDF with the bench wkhtmltopdf route and inspect pagination, signatures, the active v4 terms snapshot and the absence of removed schedule/specification/approval sections. Generate archived v2 and v3 snapshots and a legacy v1 print; confirm each retains its saved wording and layout.
 - Check role access on a disposable site: `PZ Sales Contract User` can create/read/write/print but cannot submit/cancel; `PZ Sales Contract Manager` has those contract actions; generic `Sales User`, `Sales Manager`, `Accounts Manager` and `System Manager` do not gain incidental contract access. Administrator retains native full access. Verify native Sales Order create/submit/cancel permissions separately for each intended user; users who cancel a contract while its linked order is Draft also need native Sales Order Delete permission. Verify those prerequisites before deployment.
 
 ## Release gate

@@ -155,7 +155,7 @@ class PZSalesContract(Document):
             self.terms_version = CURRENT_TERMS_VERSION
             self.entry_policy_version = ENTRY_POLICY_VERSION
             self.party_entry_version = PARTY_ENTRY_VERSION
-            # New non-amendment v2/v3 families never accept hidden legacy schedule
+            # New non-amendment v2/v3/v4 families never accept hidden legacy schedule
             # data through Desk defaults, imports, or REST payloads. Clear before
             # validate_schedule so it cannot snapshot or derive legacy deadlines.
             self._clear_historical_contract_fields()
@@ -512,7 +512,7 @@ class PZSalesContract(Document):
 
     def validate_schedule(self):
         if self.uses_item_only_draft_order():
-            # Item-only v2/v3 contracts do not carry the historical Commercial Schedule.
+            # Item-only v2/v3/v4 contracts do not carry the historical Commercial Schedule.
             return
         self.validate_legacy_contract_requirements()
         old = self.get_doc_before_save()
