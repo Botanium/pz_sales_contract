@@ -71,7 +71,7 @@ def snapshot_for_new_contract(original=None):
 
 
 def clauses_for_contract(doc):
-    """Render saved clauses; pre-snapshot records use the immutable v1 baseline."""
+    """Render saved clauses or the pinned version archive for a missing snapshot."""
     snapshot = doc.get('terms_snapshot')
     if not snapshot:
         snapshot = _snapshot_for_version(doc.get('terms_version'))
