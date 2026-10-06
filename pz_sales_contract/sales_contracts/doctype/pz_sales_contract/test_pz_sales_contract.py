@@ -160,6 +160,135 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertEqual(frappe.db.get_value('Sales Order Item',
             {'parent': d.sales_order, 'idx': 1}, 'custom_bitumen_grade'), d.items[0].grade_master)
 
+    def test_advance_percentage_amounts_are_validated_and_server_authoritative(self):
+        for percentage, advance, balance in [
+            (30, 300, 700), (50, 500, 500), (20, 200, 800),
+            (0, 0, 1000), (100, 1000, 0), (12.5, 125, 875),
+        ]:
+            with self.subTest(advance_percentage=percentage):
+                doc = contract(advance_percentage=percentage, advance_required=1, balance_required=999)
+                self.assertEqual((doc.advance_required, doc.balance_required), (advance, balance))
+                self.assertIn(f'pay {percentage:g}% of the total contract amount', doc.terms_snapshot)
+                self.assertIn(f'The remaining {100 - percentage:g}% must be paid', doc.terms_snapshot)
+
+        fractional = contract(advance_percentage=50, items=[dict(
+            item_code='PZ Synthetic Bitumen', qty=1, uom='Nos', rate=100.01,
+            grade_master=synthetic_bitumen_grade(), grade='PZ-SYNTHETIC-60-70',
+            packaging='Synthetic drums', specification_reference='Synthetic split rounding',
+        )])
+        self.assertEqual((fractional.grand_total, fractional.advance_required, fractional.balance_required),
+            (100.01, 50.01, 50.00))
+
+        missing = contract(insert=False, advance_percentage=None, advance_required=1, balance_required=999)
+        missing.insert()
+        self.assertEqual((missing.advance_percentage, missing.advance_required, missing.balance_required),
+            (30, 300, 700))
+
+        for value in (-0.01, 100.01, float('nan'), float('inf'), '-Infinity', 'not a percentage'):
+            with self.subTest(invalid_advance_percentage=value):
+                invalid = contract(insert=False, advance_percentage=value)
+                with self.assertRaises(frappe.ValidationError):
+                    invalid.insert()
+
+    def test_advance_percentage_tracks_draft_total_and_freezes_after_submission(self):
+        doc = contract(advance_percentage=20)
+        doc.items[0].qty = 11
+        doc.discount_amount = 100
+        doc.save()
+        self.assertEqual((doc.grand_total, doc.advance_required, doc.balance_required), (1000, 200, 800))
+        doc.items[0].qty = 10
+        doc.items[0].rate = 200
+        doc.discount_amount = 200
+        snapshot_at_twenty = json.loads(doc.terms_snapshot)
+        doc.advance_percentage = 50
+        doc.save()
+        self.assertEqual((doc.grand_total, doc.advance_required, doc.balance_required), (1800, 900, 900))
+        snapshot_at_fifty = json.loads(doc.terms_snapshot)
+        self.assertEqual(snapshot_at_twenty[:2], snapshot_at_fifty[:2])
+        self.assertEqual(snapshot_at_twenty[3:], snapshot_at_fifty[3:])
+        self.assertIn('pay 50% of the total contract amount', doc.terms_snapshot)
+        doc.submit()
+        doc.advance_percentage = 60
+        with self.assertRaises(frappe.ValidationError):
+            doc.save()
+
+    def test_amendments_copy_advance_percentage_and_prints_use_the_contract_total(self):
+        from bs4 import BeautifulSoup
+        from pz_sales_contract.printing import pdf_body_html
+
+        source = contract(advance_percentage=50, print_as_draft=1)
+        snapshot = source.terms_snapshot
+        source_html = frappe.get_print(source.doctype, source.name, print_format='Standard')
+        soup = BeautifulSoup(source_html, 'html.parser')
+        totals = {row.select('td')[0].get_text(strip=True): row.select('td')[1].get_text(strip=True)
+            for row in soup.select('.totals tr')}
+        self.assertEqual((totals['50% advance'], totals['50% balance']), ('500.00', '500.00'))
+        self.assertIn('pay 50% of the total contract amount', soup.get_text())
+        self.assertIn('>DRAFT<', source_html)
+        pdf_route_html = pdf_body_html(None, {'doc': source.as_dict()})
+        self.assertIn('50% advance', pdf_route_html)
+        self.assertIn('50% balance', pdf_route_html)
+        self.assertIn('500.00', pdf_route_html)
+
+        source.submit()
+        source.cancel()
+        amendment = frappe.copy_doc(source)
+        amendment.docstatus = 0
+        amendment.amended_from = source.name
+        amendment.sales_order = None
+        amendment.first_family = None
+        amendment.insert()
+        self.assertEqual(amendment.advance_percentage, 50)
+        self.assertEqual(amendment.terms_snapshot, snapshot)
+
+    def test_html_and_native_pdf_route_keep_amounts_and_clause_wording_in_sync(self):
+        from bs4 import BeautifulSoup
+        from pz_sales_contract.printing import pdf_body_html
+
+        for entered, advance_percentage, balance_percentage, advance_amount, balance_amount in [
+            (None, 30, 70, '300.00', '700.00'),
+            (50, 50, 50, '500.00', '500.00'),
+            (20, 20, 80, '200.00', '800.00'),
+        ]:
+            with self.subTest(advance_percentage=advance_percentage):
+                source = contract(advance_percentage=entered)
+                outputs = {
+                    'standard HTML': frappe.get_print(source.doctype, source.name, print_format='Standard'),
+                    'native PDF route HTML': pdf_body_html(None, {'doc': source.as_dict()}),
+                }
+                for route, html in outputs.items():
+                    with self.subTest(route=route):
+                        soup = BeautifulSoup(html, 'html.parser')
+                        totals = {row.select('td')[0].get_text(strip=True): row.select('td')[1].get_text(strip=True)
+                            for row in soup.select('.totals tr')}
+                        self.assertEqual(
+                            (totals[f'{advance_percentage}% advance'], totals[f'{balance_percentage}% balance']),
+                            (advance_amount, balance_amount),
+                        )
+                        rendered = soup.get_text(' ', strip=True)
+                        self.assertIn(f'pay {advance_percentage}% of the total contract amount', rendered)
+                        self.assertIn(f'The remaining {balance_percentage}% must be paid', rendered)
+                        self.assertIn(f'{advance_percentage}% advance', rendered)
+                        self.assertIn(f'{balance_percentage}% balance', rendered)
+                        if advance_percentage != 30:
+                            self.assertNotIn('30% advance, 70% balance', rendered)
+
+    def test_saved_v4_contract_keeps_its_original_split_and_clause_snapshot(self):
+        doc = contract()
+        doc.db_set('terms_version', 'v4')
+        doc.db_set('terms_snapshot', None)
+        doc.db_set('advance_percentage', 50)
+        doc.reload()
+        self.assertIn('pay 30% of the total contract amount', json.dumps(clauses_for_contract(doc)))
+        html = frappe.get_print(doc.doctype, doc.name, print_format='Standard')
+        self.assertIn('30% advance', html)
+        self.assertIn('70% balance', html)
+        self.assertIn('300.00', html)
+        self.assertIn('700.00', html)
+        doc.advance_percentage = 50
+        with self.assertRaises(frappe.ValidationError):
+            doc.save()
+
     def test_contract_line_grades_are_independent(self):
         first_grade = synthetic_bitumen_grade()
         second_grade = synthetic_bitumen_grade('80/100')
@@ -191,15 +320,23 @@ class TestPZSalesContract(IntegrationTestCase):
         frozen_v2 = (app_path / 'terms_versions' / 'v2.json').read_text(encoding='utf-8')
         frozen_v3 = (app_path / 'terms_versions' / 'v3.json').read_text(encoding='utf-8')
         frozen_v4 = (app_path / 'terms_versions' / 'v4.json').read_text(encoding='utf-8')
-        self.assertEqual(active_snapshot, frozen_v4)
+        frozen_v5 = (app_path / 'terms_versions' / 'v5.json').read_text(encoding='utf-8')
+        self.assertEqual(active_snapshot, frozen_v5)
+        self.assertNotEqual(active_snapshot, frozen_v4)
         self.assertNotEqual(active_snapshot, frozen_v3)
-        d = contract()
+        d = contract(advance_percentage=50)
         self.assertEqual(d.terms_version, CURRENT_TERMS_VERSION)
-        self.assertEqual(d.terms_snapshot, active_snapshot)
-        self.assertEqual(clauses_for_contract(d), json.loads(active_snapshot))
+        self.assertNotEqual(d.terms_snapshot, active_snapshot)
+        self.assertIn('pay 50% of the total contract amount', d.terms_snapshot)
+        self.assertIn('The remaining 50% must be paid', d.terms_snapshot)
+        self.assertNotIn('{advance_percentage}', d.terms_snapshot)
+        self.assertNotIn('{balance_percentage}', d.terms_snapshot)
+        self.assertEqual(clauses_for_contract(d), json.loads(d.terms_snapshot))
 
-        source_with_snapshot = SimpleNamespace(get=lambda key: active_snapshot if key == 'terms_snapshot' else None)
-        self.assertEqual(snapshot_for_new_contract(source_with_snapshot), active_snapshot)
+        source_with_snapshot = SimpleNamespace(get=lambda key: {
+            'terms_version': 'v5', 'advance_percentage': 50, 'terms_snapshot': d.terms_snapshot,
+        }.get(key))
+        self.assertEqual(snapshot_for_new_contract(source_with_snapshot), d.terms_snapshot)
 
         v2_source = SimpleNamespace(get=lambda key: {'terms_version': 'v2', 'terms_snapshot': None}.get(key))
         self.assertEqual(snapshot_for_new_contract(v2_source), frozen_v2)
@@ -212,6 +349,14 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertIn('outside those hours', clauses_for_contract(d)[3])
         saved_v3 = SimpleNamespace(get=lambda key: {'terms_version': 'v3', 'terms_snapshot': frozen_v3}.get(key))
         self.assertEqual(snapshot_for_new_contract(saved_v3), frozen_v3)
+
+        # Historical v4 fallback remains the exact pinned 30/70 clause even
+        # when the new percentage field is absent or forged on an old record.
+        v4_source = SimpleNamespace(get=lambda key: {
+            'terms_version': 'v4', 'advance_percentage': 50, 'terms_snapshot': None,
+        }.get(key))
+        self.assertEqual(snapshot_for_new_contract(v4_source), frozen_v4)
+        self.assertIn('pay 30% of the total contract amount', clauses_for_contract(v4_source)[2])
 
         legacy_source = SimpleNamespace(get=lambda key: None)
         self.assertEqual(snapshot_for_new_contract(legacy_source), frozen_snapshot)
@@ -1718,14 +1863,14 @@ class TestPZSalesContract(IntegrationTestCase):
                         self.assertIn('30% advance', html)
                         self.assertIn('70% balance', html)
 
-    def test_v4_terms_and_print_stamp_match_html_custom_print_and_native_pdf_input(self):
+    def test_v5_terms_and_print_stamp_match_html_custom_print_and_native_pdf_input(self):
         import base64
         from bs4 import BeautifulSoup
         from frappe.www.printview import get_html_and_style
         from frappe.utils.print_format import download_pdf
 
         doc = contract(print_as_draft=1)
-        expected_clauses = json.loads((Path(__file__).resolve().parents[3] / 'terms.json').read_text())
+        expected_clauses = json.loads(doc.terms_snapshot)
         expected_stamp = 'data:image/png;base64,' + base64.b64encode(
             b'synthetic site-private print fixture'
         ).decode()

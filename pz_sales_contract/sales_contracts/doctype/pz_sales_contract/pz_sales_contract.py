@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 
 import frappe
 from frappe.model.document import Document
@@ -14,6 +14,7 @@ from pz_sales_contract.entry_policy import (
     ENTRY_POLICY_VERSION, apply_item_packaging, apply_usd_policy,
     find_previous_item_row, normalize_discount, uses_entry_policy, validate_location,
 )
+from pz_sales_contract.payment_split import calculate_payment_split, normalize_advance_percentage
 from pz_sales_contract.sales_contracts.doctype.pz_contract_defaults.pz_contract_defaults import (
     COMPANY_DEFAULT_FIELDS,
     get_allowed_contract_incoterms,
@@ -127,6 +128,10 @@ class PZSalesContract(Document):
 
     def before_insert(self):
         self._apply_company_defaults()
+        try:
+            self.advance_percentage = float(normalize_advance_percentage(self.get('advance_percentage')))
+        except ValueError as exc:
+            frappe.throw(str(exc))
         # Customer row lock serialises simultaneous first inserts across all companies.
         frappe.db.sql('SELECT name FROM `tabCustomer` WHERE name=%s FOR UPDATE', self.customer)
         if self.amended_from:
@@ -146,6 +151,8 @@ class PZSalesContract(Document):
             # Amendments retain the source print/terms version. A legacy source
             # without a version stays on its historical print layout.
             self.terms_version = original.get('terms_version')
+            source_percentage = original.get('advance_percentage') if original.get('terms_version') == CURRENT_TERMS_VERSION else 30
+            self.advance_percentage = float(normalize_advance_percentage(source_percentage))
             self.entry_policy_version = original.get('entry_policy_version')
             self.party_entry_version = original.get('party_entry_version')
         else:
@@ -155,7 +162,7 @@ class PZSalesContract(Document):
             self.terms_version = CURRENT_TERMS_VERSION
             self.entry_policy_version = ENTRY_POLICY_VERSION
             self.party_entry_version = PARTY_ENTRY_VERSION
-            # New non-amendment v2/v3/v4 families never accept hidden legacy schedule
+            # New non-amendment v2-v5 families never accept hidden legacy schedule
             # data through Desk defaults, imports, or REST payloads. Clear before
             # validate_schedule so it cannot snapshot or derive legacy deadlines.
             self._clear_historical_contract_fields()
@@ -165,7 +172,7 @@ class PZSalesContract(Document):
         # Pin the exact clauses used by this contract. Amendments retain the
         # source contract's clause version; historical records without a saved
         # snapshot use the immutable first-version copy when printed.
-        self.terms_snapshot = snapshot_for_new_contract(original)
+        self.terms_snapshot = snapshot_for_new_contract(original, self.advance_percentage)
         # A locking current read is essential here: ordinary exists() can read
         # an earlier REPEATABLE READ snapshot even after waiting for Customer.
         reservation = frappe.db.sql('SELECT name, first_family FROM `tabPZ Contract Registry` WHERE customer=%s FOR UPDATE',self.customer)
@@ -283,13 +290,33 @@ class PZSalesContract(Document):
             self.set(fieldname, None)
 
     def validate(self):
+        try:
+            advance_percentage = normalize_advance_percentage(self.get('advance_percentage'))
+        except ValueError as exc:
+            frappe.throw(str(exc))
+        if self.get('terms_version') != CURRENT_TERMS_VERSION:
+            if advance_percentage != 30:
+                frappe.throw('Historical contract versions retain their original 30% advance and 70% balance')
+            advance_percentage = normalize_advance_percentage(30)
+        self.advance_percentage = float(advance_percentage)
         self.discount_amount = normalize_discount(self.get('discount_amount'))
         old = self.get_doc_before_save()
         if old:
             for key in ['customer', 'company', 'first_family', 'sales_order', 'amended_from', 'contract_scope_version', 'terms_version', 'entry_policy_version', 'party_entry_version']:
                 if self.get(key) != old.get(key):
                     frappe.throw(f'{key} cannot be changed after creation')
-            if self.terms_snapshot != old.terms_snapshot:
+            try:
+                old_advance_percentage = normalize_advance_percentage(old.get('advance_percentage'))
+            except ValueError as exc:
+                frappe.throw(str(exc))
+            percentage_changed = advance_percentage != old_advance_percentage
+            if percentage_changed:
+                if old.docstatus != 0:
+                    frappe.throw('The advance percentage cannot be changed after contract submission')
+                if self.amended_from or self.get('terms_version') != CURRENT_TERMS_VERSION:
+                    frappe.throw('The advance percentage cannot be changed on historical contracts or amendments')
+                self.terms_snapshot = snapshot_for_new_contract(None, advance_percentage)
+            elif self.terms_snapshot != old.terms_snapshot:
                 frappe.throw('The contract terms snapshot cannot be changed after creation')
         elif self.is_new():
             # Reject forged readonly internal values from REST/import as well as Desk.
@@ -338,9 +365,11 @@ class PZSalesContract(Document):
         precision = self.precision('advance_required')
         if precision is None:
             precision = 2
-        quantum = Decimal(10) ** -precision
-        self.advance_required = float((Decimal(str(self.grand_total))*Decimal('.30')).quantize(quantum, rounding=ROUND_HALF_UP))
-        self.balance_required = self.grand_total - self.advance_required
+        _, _, advance, balance = calculate_payment_split(
+            self.grand_total, advance_percentage, precision
+        )
+        self.advance_required = float(advance)
+        self.balance_required = float(balance)
         self.in_words = order.in_words
         for row, item in zip(self.items, order.items, strict=True):
             row.amount = item.amount
@@ -512,7 +541,7 @@ class PZSalesContract(Document):
 
     def validate_schedule(self):
         if self.uses_item_only_draft_order():
-            # Item-only v2/v3/v4 contracts do not carry the historical Commercial Schedule.
+            # Item-only v2-v5 contracts do not carry the historical Commercial Schedule.
             return
         self.validate_legacy_contract_requirements()
         old = self.get_doc_before_save()

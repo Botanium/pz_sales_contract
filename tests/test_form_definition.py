@@ -160,8 +160,18 @@ class TestContractFormDefinition(unittest.TestCase):
         canonical_v4 = json.dumps(v4_terms, ensure_ascii=False, separators=(",", ":"))
         v4_digest = hashlib.sha256(canonical_v4.encode("utf-8")).hexdigest()
         self.assertEqual(v4_digest, python_constant(CONTRACT_TERMS_PY, "CURRENT_TERMS_V4_SHA256"))
+        v5_terms = json.loads((ROOT / "pz_sales_contract/terms_versions/v5.json").read_text())
+        canonical_v5 = json.dumps(v5_terms, ensure_ascii=False, separators=(",", ":"))
+        self.assertEqual(
+            hashlib.sha256(canonical_v5.encode("utf-8")).hexdigest(),
+            python_constant(CONTRACT_TERMS_PY, "CURRENT_TERMS_V5_SHA256"),
+        )
         active_terms = json.loads(TERMS_JSON.read_text())
-        self.assertEqual(active_terms, v4_terms)
+        self.assertEqual(active_terms, v5_terms)
+        self.assertEqual(v5_terms[:2], v4_terms[:2])
+        self.assertEqual(v5_terms[3:], v4_terms[3:])
+        self.assertEqual(v5_terms[2].count("{advance_percentage}"), 1)
+        self.assertEqual(v5_terms[2].count("{balance_percentage}"), 1)
         self.assertEqual(v4_terms, frozen_terms)
         self.assertNotEqual(v4_terms, v3_terms)
         self.assertEqual(len(active_terms), 15)
@@ -178,17 +188,20 @@ class TestContractFormDefinition(unittest.TestCase):
         new_contract_path = terms_source.split("def clauses_for_contract", 1)[0]
         self.assertIn("return raw", new_contract_path)
         self.assertIn("CURRENT_TERMS_VERSION", new_contract_path)
-        self.assertIn("_snapshot_for_version(original.get('terms_version'))", new_contract_path)
+        self.assertIn("return _snapshot_for_version(version)", new_contract_path)
         self.assertIn("clauses_for_contract(doc)", (ROOT / "pz_sales_contract/printing.py").read_text())
         self.assertIn("simple_print = doc.get('terms_version') in SIMPLE_PRINT_TERMS_VERSIONS", (ROOT / "pz_sales_contract/printing.py").read_text())
-        self.assertEqual(python_constant(CONTRACT_TERMS_PY, "CURRENT_TERMS_VERSION"), "v4")
-        self.assertIn("'v2', 'v3', CURRENT_TERMS_VERSION", terms_source)
+        self.assertEqual(python_constant(CONTRACT_TERMS_PY, "CURRENT_TERMS_VERSION"), "v5")
+        self.assertIn("'v2', 'v3', 'v4', CURRENT_TERMS_VERSION", terms_source)
         self.assertIn('frm.set_df_property("specifications", "hidden", simplifiedContract)', self.javascript)
         self.assertIn("Product specification rows are not part of the simplified contract version", self.controller)
-        review_copy = (ROOT / "docs/contract-print-copy-review.md").read_text()
-        self.assertIn("## Exact v4 contract terms", review_copy)
-        self.assertIn("The archived v3 list and its digest are unchanged", review_copy)
-        self.assertIn("Terms-to-form input gaps", review_copy)
+    def test_advance_percentage_is_editable_optional_and_has_a_thirty_percent_default(self):
+        field = next(field for field in self.contract["fields"] if field["fieldname"] == "advance_percentage")
+        self.assertEqual((field["fieldtype"], field["default"], field.get("reqd")), ("Percent", "30", None))
+        self.assertEqual(field.get("precision"), "4")
+        self.assertFalse(field.get("read_only"))
+        self.assertIn("advance_percentage", self.contract["field_order"])
+        self.assertIn("Required advance", (ROOT / "pz_sales_contract/sales_contracts/doctype/pz_sales_contract/pz_sales_contract.json").read_text())
 
     def test_stamp_is_optional_print_asset_not_a_contract_field(self):
         fieldnames = {field["fieldname"] for field in self.contract["fields"]}

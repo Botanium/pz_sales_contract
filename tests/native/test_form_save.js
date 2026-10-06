@@ -380,6 +380,18 @@ test("native Save persists the manually selected Print as Draft checkbox without
   assert.equal(ui.saves[0].print_as_draft, 1);
 });
 
+test("native Save keeps the optional advance percentage default and preserves explicit zero", async () => {
+  const ui = nativeDesk(); await ui.setup(); await ui.frm.refresh(); await flush(); await ui.respond({});
+  const field = ui.frm.fields_dict.advance_percentage.df;
+  assert.equal(field.fieldtype, "Percent");
+  assert.equal(String(field.default), "30");
+  assert.notEqual(Boolean(field.reqd), true);
+  ui.frm.doc.advance_percentage = 0;
+  await ui.save();
+  assert.equal(ui.saves.length, 1);
+  assert.equal(ui.saves[0].advance_percentage, 0);
+});
+
 test("native Frappe amendment copy treats Print as Draft as a no-copy field", () => {
   const ui = nativeDesk();
   assert.ok(ui.frappe.model.get_no_copy_list("PZ Sales Contract").includes("print_as_draft"));

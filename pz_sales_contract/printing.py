@@ -5,8 +5,9 @@ import frappe
 from frappe.utils import fmt_money
 from frappe.utils.pdf import pdf_body_html as default_body
 
-from pz_sales_contract.contract_terms import SIMPLE_PRINT_TERMS_VERSIONS, clauses_for_contract
+from pz_sales_contract.contract_terms import CURRENT_TERMS_VERSION, SIMPLE_PRINT_TERMS_VERSIONS, clauses_for_contract
 from pz_sales_contract.parties import PAYMENT_INSTRUCTION_FIELDS
+from pz_sales_contract.payment_split import calculate_payment_split, format_percentage
 from pz_sales_contract.sales_contracts.doctype.pz_sales_contract.pz_sales_contract import ITEM_ONLY_DRAFT_SO_SCOPE
 
 
@@ -109,8 +110,24 @@ def get_contract_print_context(doc):
             })
     is_item_only_draft = doc.get('contract_scope_version') == ITEM_ONLY_DRAFT_SO_SCOPE
     simple_print = doc.get('terms_version') in SIMPLE_PRINT_TERMS_VERSIONS
+    precision = doc.precision('advance_required')
+    if precision is None:
+        precision = 2
+    advance_percentage_input = (
+        doc.get('advance_percentage')
+        if doc.get('terms_version') == CURRENT_TERMS_VERSION else 30
+    )
+    advance_percentage, balance_percentage, advance_amount, balance_amount = calculate_payment_split(
+        doc.grand_total, advance_percentage_input, precision
+    )
+    advance_label = f'{format_percentage(advance_percentage)}% advance'
+    balance_label = f'{format_percentage(balance_percentage)}% balance'
     context = dict(payment_instructions=[(label, doc.get(key)) for key, label in PAYMENT_INSTRUCTION_FIELDS.items() if str(doc.get(key) or '').strip()], doc=doc, holiday=holiday, spec_items=spec_items,
         is_item_only_draft=is_item_only_draft, simple_print=simple_print,
+        advance_percentage_label=format_percentage(advance_percentage),
+        balance_percentage_label=format_percentage(balance_percentage),
+        advance_label=advance_label, balance_label=balance_label,
+        advance_required=advance_amount, balance_required=balance_amount,
         format_money=fmt_money,
         clauses=clauses_for_contract(doc),
         logo='data:image/png;base64,'+base64.b64encode((path/'public/petrol_zone_logo.png').read_bytes()).decode(),

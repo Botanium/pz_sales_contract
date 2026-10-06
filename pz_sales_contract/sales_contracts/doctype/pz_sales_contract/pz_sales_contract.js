@@ -1,4 +1,5 @@
 const defaultContractIncoterms = ["EXW", "FOB", "CIF"];
+const defaultAdvancePercentage = 30;
 const contractChildLookupStates = new WeakMap();
 const partyFields = ["seller_name", "seller_address_display", "seller_email", "seller_phone",
   "customer_name", "address_display", "buyer_phone", "contact_display",
@@ -55,6 +56,77 @@ const currencyDependentDefaultFields = [
 
 const bankInstructionDefaultFields = ["beneficiary", "bank_branch", "account_iban", "swift_reference"];
 const optionalPaymentFields = ["bank_receiving_account", "cash_receiving_account", ...bankInstructionDefaultFields];
+
+function parsedAdvancePercentage(value) {
+  if (value === undefined || value === null || value === "") return defaultAdvancePercentage;
+  const percentage = Number(value);
+  return Number.isFinite(percentage) && percentage >= 0 && percentage <= 100 ? percentage : null;
+}
+
+function hasFixedHistoricalSplit(frm) {
+  return !(frm.is_new() && !frm.doc.amended_from) && frm.doc.terms_version !== "v5";
+}
+
+function percentageLabel(value) {
+  return Number(value).toFixed(4).replace(/\.?0+$/, "");
+}
+
+function contractMoneyPrecision(frm) {
+  const field = frm.get_field?.("advance_required");
+  const configured = field?.df?.precision;
+  if (configured !== undefined && configured !== null && configured !== "") {
+    const precision = Number(configured);
+    if (Number.isInteger(precision) && precision >= 0 && precision <= 9) return precision;
+  }
+  const globalPrecision = Number(frappe.defaults?.get_default?.("currency_precision"));
+  return Number.isInteger(globalPrecision) && globalPrecision >= 0 && globalPrecision <= 9
+    ? globalPrecision : 2;
+}
+
+function roundContractMoney(value, precision) {
+  const factor = 10 ** precision;
+  const scaled = Number(value) * factor;
+  if (!Number.isFinite(scaled)) return null;
+  return Math.sign(scaled) * Math.floor(Math.abs(scaled) + 0.5 + Number.EPSILON * Math.abs(scaled)) / factor;
+}
+
+function contractTotalForPaymentPreview(frm, precision) {
+  const itemOnly = frm.doc.contract_scope_version === "item-only-draft-so-v1"
+    || (frm.is_new() && !frm.doc.amended_from);
+  if (!itemOnly) {
+    const total = Number(frm.doc.grand_total);
+    return Number.isFinite(total) ? roundContractMoney(total, precision) : null;
+  }
+  const subtotal = (frm.doc.items || []).reduce((sum, row) => {
+    const quantity = Number(row.qty || 0), rate = Number(row.rate || 0);
+    if (!Number.isFinite(quantity) || !Number.isFinite(rate)) return sum;
+    return sum + (roundContractMoney(quantity * rate, precision) || 0);
+  }, 0);
+  const discount = Number(frm.doc.discount_amount || 0);
+  if (!Number.isFinite(discount)) return null;
+  return roundContractMoney(subtotal - discount, precision);
+}
+
+function updatePaymentPreview(frm, rejectInvalid = false) {
+  const advancePercentage = hasFixedHistoricalSplit(frm)
+    ? defaultAdvancePercentage : parsedAdvancePercentage(frm.doc.advance_percentage);
+  if (advancePercentage === null) {
+    if (rejectInvalid) frappe.throw(__("Advance percentage must be a finite number from 0 to 100."));
+    return;
+  }
+  const balancePercentage = 100 - advancePercentage;
+  frm.set_df_property("advance_required", "label", `Required advance (${percentageLabel(advancePercentage)}%)`);
+  frm.set_df_property("balance_required", "label", `Balance (${percentageLabel(balancePercentage)}%)`);
+  const precision = contractMoneyPrecision(frm);
+  const contractTotal = contractTotalForPaymentPreview(frm, precision);
+  if (contractTotal === null) return;
+  const advance = roundContractMoney(contractTotal * advancePercentage / 100, precision);
+  if (advance === null) return;
+  frm.doc.advance_required = advance;
+  frm.doc.balance_required = roundContractMoney(contractTotal - advance, precision);
+  frm.refresh_field?.("advance_required");
+  frm.refresh_field?.("balance_required");
+}
 
 function ensureCompanyDefaultsDocument(frm) {
   // Desk reuses one Form, including when revisiting cached unsaved documents.
@@ -556,6 +628,15 @@ frappe.ui.form.on("PZ Sales Contract", {
   onload(frm) { ensureCompanyDefaultsDocument(frm); },
   async before_save(frm) {
     ensureCompanyDefaultsDocument(frm);
+    const advancePercentage = parsedAdvancePercentage(frm.doc.advance_percentage);
+    if (advancePercentage === null) frappe.throw(__("Advance percentage must be a finite number from 0 to 100."));
+    if (hasFixedHistoricalSplit(frm) && advancePercentage !== defaultAdvancePercentage) {
+      frappe.throw(__("Historical contract versions retain their original 30% advance and 70% balance."));
+    }
+    if (frm.doc.advance_percentage === undefined || frm.doc.advance_percentage === null || frm.doc.advance_percentage === "") {
+      frm.doc.advance_percentage = defaultAdvancePercentage;
+    }
+    updatePaymentPreview(frm);
     if (!frm.is_new() || frm.doc.amended_from) return;
     if (!frm._pzCompanyDefaultsWork.size) {
       // Retry a failed/interrupted clear, or reconcile an edit made during a
@@ -572,6 +653,12 @@ frappe.ui.form.on("PZ Sales Contract", {
   },
   refresh(frm) {
     ensureCompanyDefaultsDocument(frm);
+    if (hasFixedHistoricalSplit(frm)
+      || frm.doc.advance_percentage === undefined || frm.doc.advance_percentage === null || frm.doc.advance_percentage === "") {
+      frm.doc.advance_percentage = defaultAdvancePercentage;
+      frm.refresh_field?.("advance_percentage");
+    }
+    updatePaymentPreview(frm);
     const directParties = usesDirectParties(frm);
     for (const field of ["customer_tax_id", "buyer_email_phone", ...optionalPaymentFields]) frm.set_df_property(field, "reqd", false);
     for (const field of partyFields) frm.set_df_property(field, "reqd", directParties || field === "buyer_position");
@@ -589,7 +676,14 @@ frappe.ui.form.on("PZ Sales Contract", {
     frm.set_df_property("contract_location", "hidden", !usdEntry);
     frm.set_df_property("contract_location", "reqd", usdEntry);
     if (usdEntry && frm.doc.currency !== "USD") frm.set_value("currency", "USD");
-    const simplifiedContract = ["v2", "v3", "v4"].includes(frm.doc.terms_version) || (frm.is_new() && !frm.doc.amended_from);
+    const simplifiedContract = ["v2", "v3", "v4", "v5"].includes(frm.doc.terms_version) || (frm.is_new() && !frm.doc.amended_from);
+    const advancePercentageEditable = (frm.is_new() && !frm.doc.amended_from)
+      || (frm.doc.terms_version === "v5" && Number(frm.doc.docstatus || 0) === 0 && !frm.doc.amended_from);
+    frm.set_df_property("advance_percentage", "read_only", !advancePercentageEditable);
+    const displayAdvancePercentage = hasFixedHistoricalSplit(frm)
+      ? defaultAdvancePercentage : (parsedAdvancePercentage(frm.doc.advance_percentage) ?? defaultAdvancePercentage);
+    frm.set_df_property("advance_required", "label", `Required advance (${percentageLabel(displayAdvancePercentage)}%)`);
+    frm.set_df_property("balance_required", "label", `Balance (${percentageLabel(100 - displayAdvancePercentage)}%)`);
     frm.set_df_property("specifications_section", "hidden", simplifiedContract);
     frm.set_df_property("specifications", "hidden", simplifiedContract);
     for (const row of frm.doc.items || []) {
@@ -659,6 +753,14 @@ frappe.ui.form.on("PZ Sales Contract", {
       loadCompanyDefaults(frm, frm.doc.company);
     }
   },
+  advance_percentage(frm) {
+    if (hasFixedHistoricalSplit(frm) && parsedAdvancePercentage(frm.doc.advance_percentage) !== defaultAdvancePercentage) {
+      frappe.throw(__("Historical contract versions retain their original 30% advance and 70% balance."));
+    }
+    updatePaymentPreview(frm, true);
+  },
+  discount_amount(frm) { updatePaymentPreview(frm); renderDailyChecklist(frm); },
+  grand_total(frm) { updatePaymentPreview(frm); },
   bank_receiving_account(frm) {
     markCompanyDefaultTouched(frm, "bank_receiving_account");
     renderDailyChecklist(frm);
@@ -673,8 +775,8 @@ frappe.ui.form.on("PZ Sales Contract", {
     renderDailyChecklist(frm);
   },
   contract_location(frm) { renderDailyChecklist(frm); },
-  items_add(frm) { renderDailyChecklist(frm); },
-  items_remove(frm) { renderDailyChecklist(frm); },
+  items_add(frm) { updatePaymentPreview(frm); renderDailyChecklist(frm); },
+  items_remove(frm) { updatePaymentPreview(frm); renderDailyChecklist(frm); },
   specifications_add(frm) { renderDailyChecklist(frm); },
   specifications_remove(frm) { renderDailyChecklist(frm); },
 });
@@ -742,9 +844,9 @@ frappe.ui.form.on("PZ Contract Item", {
       frappe.model.set_value(cdt, cdn, "grade", gradeMaster);
     });
   },
-  qty(frm) { renderDailyChecklist(frm); },
+  qty(frm) { updatePaymentPreview(frm); renderDailyChecklist(frm); },
   uom(frm) { renderDailyChecklist(frm); },
-  rate(frm) { renderDailyChecklist(frm); },
+  rate(frm) { updatePaymentPreview(frm); renderDailyChecklist(frm); },
   specification_reference(frm) { renderDailyChecklist(frm); },
 });
 
