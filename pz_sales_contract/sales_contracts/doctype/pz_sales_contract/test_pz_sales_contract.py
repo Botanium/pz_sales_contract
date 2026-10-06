@@ -840,8 +840,10 @@ class TestPZSalesContract(IntegrationTestCase):
                         for r in soup.select('.totals tr')}
                     for key,value in [('Subtotal',total),('Contract Amount · USD',total),('30% advance',required),('70% balance',balance)]:
                         self.assertEqual(totals[key],f'{value:.{digits}f}')
-                    self.assertIn(f'30% advance: {required:.{digits}f}',soup.get_text())
-                    self.assertIn(f'Confirmed receipt allocation: {partial:.{digits}f}',soup.get_text())
+                    # The amount remains a visible contract total, while finance
+                    # evidence no longer appears in the print or controls its mark.
+                    self.assertNotIn('Confirmed receipt allocation',soup.get_text())
+                    self.assertNotIn('30% advance:',soup.get_text())
                     status=get_status(d.name)
                     self.assertEqual((status.currency_precision,status.required,status.confirmed),(digits,required,partial))
                     receipt(d,shortfall,cash=True)
