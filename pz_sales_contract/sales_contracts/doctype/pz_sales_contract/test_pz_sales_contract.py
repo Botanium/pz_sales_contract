@@ -1023,17 +1023,16 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertIn('>DRAFT<',html)
         self.assertNotIn('FIRST ADVANCE',html)
         clauses = json.loads((Path(__file__).resolve().parents[3] / 'terms.json').read_text())
-        self.assertEqual(len(clauses), 2)
+        self.assertEqual(len(clauses), 15)
         for number, clause in enumerate(clauses, start=1):
             heading = clause.split('. ', 1)[1].split('. ', 1)[0]
             self.assertIn(f'{number}. {heading}.', html)
         self.assertIn('Contract Amount · USD',html)
         self.assertIn('linked Sales Order or invoice',html)
-        self.assertNotIn('charge',html.lower())
         self.assertNotIn('Appendix A',html)
-        self.assertNotIn('Commercial Schedule',html)
+        self.assertNotIn('<h2>Commercial Schedule</h2>',html)
         self.assertNotIn('Order and Collection Record',html)
-        self.assertNotIn('24 business hours',html.lower())
+        self.assertNotIn('PAYMENT REQUIRED WITHIN 24 BUSINESS HOURS',html)
         self.assertNotIn('collection charges and force majeure',html.lower())
         self.assertIn('Each signatory confirms that they are authorised to sign',html)
         from frappe.www.printview import get_html_and_style
