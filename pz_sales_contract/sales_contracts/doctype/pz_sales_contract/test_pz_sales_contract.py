@@ -188,6 +188,9 @@ class TestPZSalesContract(IntegrationTestCase):
         app_path = Path(__file__).resolve().parents[3]
         active_snapshot = (app_path / 'terms.json').read_text(encoding='utf-8')
         frozen_snapshot = (app_path / 'terms_versions' / 'v1.json').read_text(encoding='utf-8')
+        frozen_v2 = (app_path / 'terms_versions' / 'v2.json').read_text(encoding='utf-8')
+        frozen_v3 = (app_path / 'terms_versions' / 'v3.json').read_text(encoding='utf-8')
+        self.assertEqual(active_snapshot, frozen_v3)
         d = contract()
         self.assertEqual(d.terms_version, CURRENT_TERMS_VERSION)
         self.assertEqual(d.terms_snapshot, active_snapshot)
@@ -196,6 +199,10 @@ class TestPZSalesContract(IntegrationTestCase):
         source_with_snapshot = SimpleNamespace(get=lambda key: active_snapshot if key == 'terms_snapshot' else None)
         self.assertEqual(snapshot_for_new_contract(source_with_snapshot), active_snapshot)
 
+        v2_source = SimpleNamespace(get=lambda key: {'terms_version': 'v2', 'terms_snapshot': None}.get(key))
+        self.assertEqual(snapshot_for_new_contract(v2_source), frozen_v2)
+        self.assertEqual(clauses_for_contract(v2_source), json.loads(frozen_v2))
+
         legacy_source = SimpleNamespace(get=lambda key: None)
         self.assertEqual(snapshot_for_new_contract(legacy_source), frozen_snapshot)
         self.assertEqual(clauses_for_contract(legacy_source), json.loads(frozen_snapshot))
@@ -203,6 +210,17 @@ class TestPZSalesContract(IntegrationTestCase):
         d.terms_snapshot = '[]'
         with self.assertRaises(frappe.ValidationError):
             d.save()
+
+    def test_missing_optional_print_stamp_is_safe(self):
+        import base64
+        from tempfile import TemporaryDirectory
+        from pz_sales_contract.printing import _load_print_stamp
+        with TemporaryDirectory() as directory:
+            stamp_path = Path(directory) / 'petrol_zone_stamp.png'
+            self.assertIsNone(_load_print_stamp(directory))
+            stamp_path.write_bytes(b'synthetic print-only stamp fixture')
+            expected = 'data:image/png;base64,' + base64.b64encode(stamp_path.read_bytes()).decode()
+            self.assertEqual(_load_print_stamp(directory), expected)
 
     def test_simplified_contract_rejects_specifications_omitted_from_its_print(self):
         doc = contract(insert=False, specifications=[dict(item_code='PZ Synthetic Bitumen',
@@ -365,7 +383,7 @@ class TestPZSalesContract(IntegrationTestCase):
     def test_simplified_contract_cannot_submit_after_grade_link_was_cleared(self):
         d = contract()
         # The unchanged text snapshot may remain on the draft for history,
-        # but it must not turn a new v2 line into a free-text line that can
+        # but it must not turn a new simplified line into a free-text line that can
         # create a Sales Order on submission.
         d.items[0].grade_master = None
         d.save()
@@ -417,7 +435,7 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertEqual(doc.bank_receiving_account, 'PZ Synthetic Bank - PZT')
         self.assertIsNone(doc.governing_law)
 
-    def test_new_v2_clears_company_defaults_and_explicit_hidden_schedule_payloads(self):
+    def test_new_v3_clears_company_defaults_and_explicit_hidden_schedule_payloads(self):
         self.clear_synthetic_company_defaults()
         self.synthetic_company_defaults().insert()
         doc = contract(insert=False)
@@ -1012,17 +1030,16 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertIn('>DRAFT<',html)
         self.assertNotIn('FIRST ADVANCE',html)
         clauses = json.loads((Path(__file__).resolve().parents[3] / 'terms.json').read_text())
-        self.assertEqual(len(clauses), 2)
+        self.assertEqual(len(clauses), 15)
         for number, clause in enumerate(clauses, start=1):
             heading = clause.split('. ', 1)[1].split('. ', 1)[0]
             self.assertIn(f'{number}. {heading}.', html)
         self.assertIn('Contract Amount · USD',html)
         self.assertIn('linked Sales Order or invoice',html)
-        self.assertNotIn('charge',html.lower())
         self.assertNotIn('Appendix A',html)
-        self.assertNotIn('Commercial Schedule',html)
+        self.assertNotIn('<h2>Commercial Schedule</h2>',html)
         self.assertNotIn('Order and Collection Record',html)
-        self.assertNotIn('24 business hours',html.lower())
+        self.assertNotIn('PAYMENT REQUIRED WITHIN 24 BUSINESS HOURS',html)
         self.assertNotIn('collection charges and force majeure',html.lower())
         self.assertIn('Each signatory confirms that they are authorised to sign',html)
         from frappe.www.printview import get_html_and_style
@@ -1690,6 +1707,39 @@ class TestPZSalesContract(IntegrationTestCase):
                         self.assertNotIn('This printout records ERP receipt', html)
                         self.assertIn('30% advance', html)
                         self.assertIn('70% balance', html)
+
+    def test_v3_terms_and_print_stamp_match_html_custom_print_and_native_pdf_input(self):
+        import base64
+        from bs4 import BeautifulSoup
+        from frappe.www.printview import get_html_and_style
+        from frappe.utils.print_format import download_pdf
+
+        doc = contract(print_as_draft=1)
+        expected_clauses = json.loads((Path(__file__).resolve().parents[3] / 'terms.json').read_text())
+        expected_stamp = 'data:image/png;base64,' + base64.b64encode(
+            b'synthetic site-private print fixture'
+        ).decode()
+        with patch('pz_sales_contract.printing._load_print_stamp', return_value=expected_stamp):
+            html_view = get_html_and_style(doc=json.dumps(doc.as_dict(), default=str),
+                print_format='Petrol Zone Sales Contract')['html']
+            custom_print = frappe.get_print(doc.doctype, doc.name, print_format='Petrol Zone Sales Contract')
+            with patch('frappe.utils.pdf.get_pdf', return_value=b'%PDF-synthetic-boundary') as binary:
+                download_pdf(doc.doctype, doc.name, format='Petrol Zone Sales Contract',
+                    pdf_generator='wkhtmltopdf')
+        native_pdf_html = binary.call_args.args[0]
+
+        for rendered in (html_view, custom_print, native_pdf_html):
+            soup = BeautifulSoup(rendered, 'html.parser')
+            printed_text = soup.get_text()
+            for clause in expected_clauses:
+                self.assertIn(clause, printed_text)
+            self.assertEqual(len(soup.select('section.terms')), 3)
+            self.assertEqual(len(soup.select('section.terms p')), 15)
+            self.assertEqual(soup.select_one('img.seller-stamp').get('src'), expected_stamp)
+            self.assertIn('>DRAFT<', rendered)
+            self.assertIn('id="header-html"', rendered)
+            self.assertIn('id="footer-html"', rendered)
+            self.assertIn('page-break-inside:avoid', rendered)
 
     def test_print_as_draft_can_be_changed_after_submit_and_is_not_changed_by_receipts(self):
         doc = contract(submit=True, print_as_draft=0)

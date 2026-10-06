@@ -75,6 +75,15 @@ test("legacy contracts retain access to historical specifications", async () => 
   assert.equal(ui.fieldProperties["selling_price_list.hidden"], false);
 });
 
+for (const version of ["v2", "v3"]) {
+  test(`saved ${version} contracts keep the simplified specification editor hidden`, async () => {
+    const ui = desk(newDoc(`${version}-saved`, { __islocal: 0, terms_version: version }));
+    await ui.refresh();
+    assert.equal(ui.fieldProperties["specifications_section.hidden"], true);
+    assert.equal(ui.fieldProperties["specifications.hidden"], true);
+  });
+}
+
 test("Item lookups ignore stale, cleared, and deleted child rows", async () => {
   const ui = desk();
   const row = { doctype: "PZ Contract Item", name: "line-1", item_code: "Item A" };

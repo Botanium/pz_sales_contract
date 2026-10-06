@@ -589,7 +589,7 @@ frappe.ui.form.on("PZ Sales Contract", {
     frm.set_df_property("contract_location", "hidden", !usdEntry);
     frm.set_df_property("contract_location", "reqd", usdEntry);
     if (usdEntry && frm.doc.currency !== "USD") frm.set_value("currency", "USD");
-    const simplifiedContract = frm.doc.terms_version === "v2" || (frm.is_new() && !frm.doc.amended_from);
+    const simplifiedContract = ["v2", "v3"].includes(frm.doc.terms_version) || (frm.is_new() && !frm.doc.amended_from);
     frm.set_df_property("specifications_section", "hidden", simplifiedContract);
     frm.set_df_property("specifications", "hidden", simplifiedContract);
     for (const row of frm.doc.items || []) {

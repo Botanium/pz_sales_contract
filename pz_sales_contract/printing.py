@@ -5,7 +5,7 @@ import frappe
 from frappe.utils import fmt_money
 from frappe.utils.pdf import pdf_body_html as default_body
 
-from pz_sales_contract.contract_terms import CURRENT_TERMS_VERSION, clauses_for_contract
+from pz_sales_contract.contract_terms import SIMPLE_PRINT_TERMS_VERSIONS, clauses_for_contract
 from pz_sales_contract.parties import PAYMENT_INSTRUCTION_FIELDS
 from pz_sales_contract.sales_contracts.doctype.pz_sales_contract.pz_sales_contract import ITEM_ONLY_DRAFT_SO_SCOPE
 
@@ -65,6 +65,14 @@ def pdf_body_html(template, args, **kwargs):
     return frappe.render_template('pz_sales_contract/templates/contract.html', {'doc': args['doc']})
 
 
+def _load_print_stamp(private_files_path):
+    """Load the optional site-private stamp asset for print output only."""
+    stamp_path = Path(private_files_path) / 'petrol_zone_stamp.png'
+    if not stamp_path.is_file():
+        return None
+    return 'data:image/png;base64,' + base64.b64encode(stamp_path.read_bytes()).decode()
+
+
 def get_contract_print_context(doc):
     """Build every print value from a saved, permission-checked contract."""
     if doc.get('doctype') != 'PZ Sales Contract' or not doc.get('name'):
@@ -100,12 +108,13 @@ def get_contract_print_context(doc):
                 'specification_rows': specification_rows.get(row.item_code, []),
             })
     is_item_only_draft = doc.get('contract_scope_version') == ITEM_ONLY_DRAFT_SO_SCOPE
-    simple_print = doc.get('terms_version') == CURRENT_TERMS_VERSION
+    simple_print = doc.get('terms_version') in SIMPLE_PRINT_TERMS_VERSIONS
     context = dict(payment_instructions=[(label, doc.get(key)) for key, label in PAYMENT_INSTRUCTION_FIELDS.items() if str(doc.get(key) or '').strip()], doc=doc, holiday=holiday, spec_items=spec_items,
         is_item_only_draft=is_item_only_draft, simple_print=simple_print,
         format_money=fmt_money,
         clauses=clauses_for_contract(doc),
-        logo='data:image/png;base64,'+base64.b64encode((path/'public/petrol_zone_logo.png').read_bytes()).decode())
+        logo='data:image/png;base64,'+base64.b64encode((path/'public/petrol_zone_logo.png').read_bytes()).decode(),
+        stamp=_load_print_stamp(frappe.get_site_path('private', 'files')))
     return context
 
 
