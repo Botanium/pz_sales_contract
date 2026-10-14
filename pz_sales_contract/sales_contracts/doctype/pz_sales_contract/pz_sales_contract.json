@@ -19,6 +19,7 @@
     "items",
     "discount_amount",
     "advance_percentage",
+    "cargo_ready_within_days",
     "taxes",
     "subtotal",
     "tax_total",
@@ -711,6 +712,12 @@
       "fieldtype": "Data",
       "hidden": 1,
       "read_only": 1
+    },
+    {
+      "fieldname": "cargo_ready_within_days",
+      "fieldtype": "Int",
+      "label": "Cargo Ready Within (Days)",
+      "description": "Optional calendar days after receipt of the agreed advance payment. Leave blank to omit the readiness commitment. With 0% advance, no advance-triggered readiness commitment is printed."
     }
   ],
   "permissions": [

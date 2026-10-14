@@ -11,8 +11,10 @@ ARCHIVED_TERMS_V2_SHA256 = 'f09bfdc955dd477ca151a848a9b5b934dd9f9ea41583c3aeeb67
 ARCHIVED_TERMS_V3_SHA256 = '2d7f41f3d77b49af758d65fb927e1f42b08c88674f2d409c1bc50ff2c8abb577'
 CURRENT_TERMS_V4_SHA256 = 'af5bca40d97909791820b4eb7d2031f4765c863e7d0cad44eef8d5ed5c3937f7'
 CURRENT_TERMS_V5_SHA256 = 'c7e120bcf689054352db1b9a187a10bf6386e8b4fff12524ba1808cf7c38960a'
-CURRENT_TERMS_VERSION = 'v5'
-SIMPLE_PRINT_TERMS_VERSIONS = frozenset({'v2', 'v3', 'v4', CURRENT_TERMS_VERSION})
+CURRENT_TERMS_V6_SHA256 = '07bf70a28cd2f3999ed665181e2908854eed5070f7197bae7e98fc919540b870'
+CURRENT_TERMS_VERSION = 'v6'
+PARAMETERIZED_TERMS_VERSIONS = frozenset({'v5', 'v6'})
+SIMPLE_PRINT_TERMS_VERSIONS = frozenset({'v2', 'v3', 'v4', 'v5', CURRENT_TERMS_VERSION})
 
 PINNED_TERMS = {
     'v1': ('v1.json', LEGACY_TERMS_V1_SHA256),
@@ -20,6 +22,7 @@ PINNED_TERMS = {
     'v3': ('v3.json', ARCHIVED_TERMS_V3_SHA256),
     'v4': ('v4.json', CURRENT_TERMS_V4_SHA256),
     'v5': ('v5.json', CURRENT_TERMS_V5_SHA256),
+    'v6': ('v6.json', CURRENT_TERMS_V6_SHA256),
 }
 
 
@@ -77,8 +80,8 @@ def _active_terms_template():
     return raw
 
 
-def snapshot_for_new_contract(original=None, advance_percentage=30):
-    """Copy historical terms for amendments or resolve only v5 payment percentages."""
+def snapshot_for_new_contract(original=None, advance_percentage=30, cargo_ready_days=None, version=None):
+    """Preserve amendments; parameterize only the selected new/draft version."""
     if original:
         snapshot = original.get('terms_snapshot')
         if snapshot:
@@ -86,13 +89,21 @@ def snapshot_for_new_contract(original=None, advance_percentage=30):
         # Keep a versioned source's baseline when a historical snapshot is absent.
         # Truly legacy records without a version use the immutable v1 copy.
         version = original.get('terms_version')
-        if version == CURRENT_TERMS_VERSION:
-            return _parameterized_v5_snapshot(
-                _snapshot_for_version(CURRENT_TERMS_VERSION),
-                original.get('advance_percentage'),
-            )
+        if version in PARAMETERIZED_TERMS_VERSIONS:
+            return snapshot_for_new_contract(advance_percentage=original.get('advance_percentage'),
+                cargo_ready_days=original.get('cargo_ready_within_days'), version=version)
         return _snapshot_for_version(version)
-    return _parameterized_v5_snapshot(_active_terms_template(), advance_percentage)
+    version = version or CURRENT_TERMS_VERSION
+    raw = _active_terms_template() if version == CURRENT_TERMS_VERSION else _snapshot_for_version(version)
+    snapshot = _parameterized_v5_snapshot(raw, advance_percentage)
+    if version == 'v6':
+        from pz_sales_contract.cargo_readiness import readiness_clause
+        clause = readiness_clause(cargo_ready_days, advance_percentage)
+        if clause:
+            clauses = json.loads(snapshot)
+            clauses.append(clause)
+            snapshot = json.dumps(clauses, ensure_ascii=False, indent=2) + '\n'
+    return snapshot
 
 
 def clauses_for_contract(doc):
@@ -100,11 +111,9 @@ def clauses_for_contract(doc):
     snapshot = doc.get('terms_snapshot')
     if not snapshot:
         version = doc.get('terms_version')
-        if version == CURRENT_TERMS_VERSION:
-            snapshot = _parameterized_v5_snapshot(
-                _snapshot_for_version(CURRENT_TERMS_VERSION),
-                doc.get('advance_percentage'),
-            )
+        if version in PARAMETERIZED_TERMS_VERSIONS:
+            snapshot = snapshot_for_new_contract(advance_percentage=doc.get('advance_percentage'),
+                cargo_ready_days=doc.get('cargo_ready_within_days'), version=version)
         else:
             snapshot = _snapshot_for_version(version)
     return json.loads(_validated_snapshot(snapshot))

@@ -9,11 +9,12 @@ from pz_sales_contract.parties import (
     PARTY_ENTRY_VERSION, PARTY_LINK_FIELDS, PAYMENT_INSTRUCTION_FIELDS, SELLER_DEFAULTS, uses_direct_parties, validate_party_fields,
 )
 from pz_sales_contract.calendar import add_open_hours, schedule
-from pz_sales_contract.contract_terms import CURRENT_TERMS_VERSION, SIMPLE_PRINT_TERMS_VERSIONS, snapshot_for_new_contract
+from pz_sales_contract.contract_terms import CURRENT_TERMS_VERSION, PARAMETERIZED_TERMS_VERSIONS, SIMPLE_PRINT_TERMS_VERSIONS, snapshot_for_new_contract
 from pz_sales_contract.entry_policy import (
     ENTRY_POLICY_VERSION, apply_item_packaging, apply_usd_policy,
     find_previous_item_row, normalize_discount, uses_entry_policy, validate_location,
 )
+from pz_sales_contract.cargo_readiness import normalize_cargo_ready_days
 from pz_sales_contract.payment_split import calculate_payment_split, normalize_advance_percentage
 from pz_sales_contract.sales_contracts.doctype.pz_contract_defaults.pz_contract_defaults import (
     COMPANY_DEFAULT_FIELDS,
@@ -151,8 +152,9 @@ class PZSalesContract(Document):
             # Amendments retain the source print/terms version. A legacy source
             # without a version stays on its historical print layout.
             self.terms_version = original.get('terms_version')
-            source_percentage = original.get('advance_percentage') if original.get('terms_version') == CURRENT_TERMS_VERSION else 30
+            source_percentage = original.get('advance_percentage') if original.get('terms_version') in PARAMETERIZED_TERMS_VERSIONS else 30
             self.advance_percentage = float(normalize_advance_percentage(source_percentage))
+            self.cargo_ready_within_days = original.get('cargo_ready_within_days')
             self.entry_policy_version = original.get('entry_policy_version')
             self.party_entry_version = original.get('party_entry_version')
         else:
@@ -172,7 +174,7 @@ class PZSalesContract(Document):
         # Pin the exact clauses used by this contract. Amendments retain the
         # source contract's clause version; historical records without a saved
         # snapshot use the immutable first-version copy when printed.
-        self.terms_snapshot = snapshot_for_new_contract(original, self.advance_percentage)
+        self.terms_snapshot = snapshot_for_new_contract(original, self.advance_percentage, self.get('cargo_ready_within_days'))
         # A locking current read is essential here: ordinary exists() can read
         # an earlier REPEATABLE READ snapshot even after waiting for Customer.
         reservation = frappe.db.sql('SELECT name, first_family FROM `tabPZ Contract Registry` WHERE customer=%s FOR UPDATE',self.customer)
@@ -294,11 +296,18 @@ class PZSalesContract(Document):
             advance_percentage = normalize_advance_percentage(self.get('advance_percentage'))
         except ValueError as exc:
             frappe.throw(str(exc))
-        if self.get('terms_version') != CURRENT_TERMS_VERSION:
+        if self.get('terms_version') not in PARAMETERIZED_TERMS_VERSIONS:
             if advance_percentage != 30:
                 frappe.throw('Historical contract versions retain their original 30% advance and 70% balance')
             advance_percentage = normalize_advance_percentage(30)
         self.advance_percentage = float(advance_percentage)
+        try:
+            cargo_days = normalize_cargo_ready_days(self.get('cargo_ready_within_days'))
+        except ValueError as exc:
+            frappe.throw(str(exc))
+        if self.get('terms_version') != 'v6' and cargo_days is not None:
+            frappe.throw('Cargo readiness cannot be added to historical contracts')
+        self.cargo_ready_within_days = cargo_days
         self.discount_amount = normalize_discount(self.get('discount_amount'))
         old = self.get_doc_before_save()
         if old:
@@ -310,12 +319,15 @@ class PZSalesContract(Document):
             except ValueError as exc:
                 frappe.throw(str(exc))
             percentage_changed = advance_percentage != old_advance_percentage
-            if percentage_changed:
+            readiness_changed = cargo_days != normalize_cargo_ready_days(old.get('cargo_ready_within_days'))
+            if readiness_changed and (old.docstatus != 0 or self.amended_from or self.get('terms_version') != 'v6'):
+                frappe.throw('Cargo readiness cannot be changed on submitted contracts or amendments')
+            if percentage_changed or readiness_changed:
                 if old.docstatus != 0:
                     frappe.throw('The advance percentage cannot be changed after contract submission')
-                if self.amended_from or self.get('terms_version') != CURRENT_TERMS_VERSION:
+                if self.amended_from or self.get('terms_version') not in PARAMETERIZED_TERMS_VERSIONS:
                     frappe.throw('The advance percentage cannot be changed on historical contracts or amendments')
-                self.terms_snapshot = snapshot_for_new_contract(None, advance_percentage)
+                self.terms_snapshot = snapshot_for_new_contract(None, advance_percentage, cargo_days, version=self.terms_version)
             elif self.terms_snapshot != old.terms_snapshot:
                 frappe.throw('The contract terms snapshot cannot be changed after creation')
         elif self.is_new():

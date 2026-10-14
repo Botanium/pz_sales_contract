@@ -64,7 +64,41 @@ function parsedAdvancePercentage(value) {
 }
 
 function hasFixedHistoricalSplit(frm) {
-  return !(frm.is_new() && !frm.doc.amended_from) && frm.doc.terms_version !== "v5";
+  return !(frm.is_new() && !frm.doc.amended_from) && !["v5", "v6"].includes(frm.doc.terms_version);
+}
+
+function guardCargoReadinessInput(frm) {
+  const control = frm.fields_dict?.cargo_ready_within_days;
+  if (!control?.parse || control._pzCargoParseGuard) return;
+  control.parse = function (value) {
+    validateCargoReadinessValue(value);
+    return value === undefined || value === null || value === "" ? null : Number(value);
+  };
+  control._pzCargoParseGuard = true;
+}
+
+function updateCargoReadiness(frm) {
+  guardCargoReadinessInput(frm);
+  const supported = (frm.is_new() && !frm.doc.amended_from) || frm.doc.terms_version === "v6";
+  frm.set_df_property("cargo_ready_within_days", "hidden", !supported);
+  frm.set_df_property("cargo_ready_within_days", "read_only", !supported || Number(frm.doc.docstatus || 0) !== 0 || Boolean(frm.doc.amended_from));
+  frm.set_df_property("cargo_ready_within_days", "description", parsedAdvancePercentage(frm.doc.advance_percentage) === 0
+    ? "With 0% advance, no advance-triggered cargo readiness commitment is printed. Any entered days are omitted."
+    : "Optional calendar days after receipt of the agreed advance payment. Leave blank to omit the readiness commitment.");
+}
+
+function validateCargoReadiness(frm) {
+  const input = frm.fields_dict?.cargo_ready_within_days?.$input;
+  if (input?.val) validateCargoReadinessValue(input.val());
+  validateCargoReadinessValue(frm.doc.cargo_ready_within_days);
+}
+
+function validateCargoReadinessValue(value) {
+  if (value === undefined || value === null || value === "") return;
+  const days = Number(value);
+  if (!Number.isInteger(days) || days < 0 || days > 2147483647) {
+    frappe.throw(__("Cargo Ready Within (Days) must be a positive whole number of calendar days, or blank."));
+  }
 }
 
 function percentageLabel(value) {
@@ -628,6 +662,7 @@ frappe.ui.form.on("PZ Sales Contract", {
   onload(frm) { ensureCompanyDefaultsDocument(frm); },
   async before_save(frm) {
     ensureCompanyDefaultsDocument(frm);
+    validateCargoReadiness(frm);
     const advancePercentage = parsedAdvancePercentage(frm.doc.advance_percentage);
     if (advancePercentage === null) frappe.throw(__("Advance percentage must be a finite number from 0 to 100."));
     if (hasFixedHistoricalSplit(frm) && advancePercentage !== defaultAdvancePercentage) {
@@ -676,9 +711,10 @@ frappe.ui.form.on("PZ Sales Contract", {
     frm.set_df_property("contract_location", "hidden", !usdEntry);
     frm.set_df_property("contract_location", "reqd", usdEntry);
     if (usdEntry && frm.doc.currency !== "USD") frm.set_value("currency", "USD");
-    const simplifiedContract = ["v2", "v3", "v4", "v5"].includes(frm.doc.terms_version) || (frm.is_new() && !frm.doc.amended_from);
+    updateCargoReadiness(frm);
+    const simplifiedContract = ["v2", "v3", "v4", "v5", "v6"].includes(frm.doc.terms_version) || (frm.is_new() && !frm.doc.amended_from);
     const advancePercentageEditable = (frm.is_new() && !frm.doc.amended_from)
-      || (frm.doc.terms_version === "v5" && Number(frm.doc.docstatus || 0) === 0 && !frm.doc.amended_from);
+      || (["v5", "v6"].includes(frm.doc.terms_version) && Number(frm.doc.docstatus || 0) === 0 && !frm.doc.amended_from);
     frm.set_df_property("advance_percentage", "read_only", !advancePercentageEditable);
     const displayAdvancePercentage = hasFixedHistoricalSplit(frm)
       ? defaultAdvancePercentage : (parsedAdvancePercentage(frm.doc.advance_percentage) ?? defaultAdvancePercentage);
@@ -753,7 +789,9 @@ frappe.ui.form.on("PZ Sales Contract", {
       loadCompanyDefaults(frm, frm.doc.company);
     }
   },
+  cargo_ready_within_days(frm) { validateCargoReadiness(frm); },
   advance_percentage(frm) {
+    updateCargoReadiness(frm);
     if (hasFixedHistoricalSplit(frm) && parsedAdvancePercentage(frm.doc.advance_percentage) !== defaultAdvancePercentage) {
       frappe.throw(__("Historical contract versions retain their original 30% advance and 70% balance."));
     }
