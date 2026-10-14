@@ -70,10 +70,9 @@ function hasFixedHistoricalSplit(frm) {
 function guardCargoReadinessInput(frm) {
   const control = frm.fields_dict?.cargo_ready_within_days;
   if (!control?.parse || control._pzCargoParseGuard) return;
-  const nativeParse = control.parse;
   control.parse = function (value) {
     validateCargoReadinessValue(value);
-    return nativeParse.call(this, value);
+    return value === undefined || value === null || value === "" ? null : Number(value);
   };
   control._pzCargoParseGuard = true;
 }

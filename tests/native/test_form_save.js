@@ -418,7 +418,7 @@ test("native Int input rejects fractions and text before truncation and blocks s
     await ui.save();
     assert.equal(ui.saves.length, priorSaves);
   }
-  for (const value of ["30", "50", "60", "137"]) {
+  for (const value of ["30", "50", "60", "137", "1e2", "2e3", "0x10"]) {
     raw = value;
     assert.equal(control.parse(value), Number(value));
   }
