@@ -714,3 +714,36 @@ test("historical party snapshots get neither defaults nor new mandatory fields",
   assert.equal(ui.frm.doc.seller_name, undefined);
   assert.equal(ui.fieldProperties["buyer_email_phone.reqd"], false);
 });
+
+test("cargo readiness is optional calendar days, with a clear no-advance omission", async () => {
+  const ui = desk();
+  await ui.refresh();
+  assert.equal(ui.frm.doc.cargo_ready_within_days, undefined);
+  assert.equal(ui.fieldProperties["cargo_ready_within_days.hidden"], false);
+  assert.equal(ui.fieldProperties["cargo_ready_within_days.read_only"], false);
+  assert.match(ui.fieldProperties["cargo_ready_within_days.description"], /calendar days/);
+  for (const value of ["", 0, 30, 50, 60, 137]) {
+    ui.frm.doc.cargo_ready_within_days = value;
+    ui.events.cargo_ready_within_days(ui.frm);
+  }
+  for (const value of [-1, 1.5, "invalid", Infinity, 2147483648]) {
+    ui.frm.doc.cargo_ready_within_days = value;
+    assert.throws(() => ui.events.cargo_ready_within_days(ui.frm), /whole number/);
+  }
+  ui.frm.doc.advance_percentage = 0;
+  ui.events.advance_percentage(ui.frm);
+  assert.match(ui.fieldProperties["cargo_ready_within_days.description"], /0% advance.*omitted/);
+});
+
+test("cargo readiness stays hidden on historical versions and freezes on submitted or amended v6", async () => {
+  for (const version of [null, "v1", "v2", "v3", "v4", "v5"]) {
+    const ui = desk(newDoc("old", { __islocal: 0, terms_version: version }));
+    await ui.refresh();
+    assert.equal(ui.fieldProperties["cargo_ready_within_days.hidden"], true);
+  }
+  for (const extra of [{ docstatus: 1 }, { amended_from: "original" }]) {
+    const ui = desk(newDoc("v6", { __islocal: 0, terms_version: "v6", ...extra }));
+    await ui.refresh();
+    assert.equal(ui.fieldProperties["cargo_ready_within_days.read_only"], true);
+  }
+});

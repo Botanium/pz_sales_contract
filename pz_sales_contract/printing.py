@@ -5,7 +5,7 @@ import frappe
 from frappe.utils import fmt_money
 from frappe.utils.pdf import pdf_body_html as default_body
 
-from pz_sales_contract.contract_terms import CURRENT_TERMS_VERSION, SIMPLE_PRINT_TERMS_VERSIONS, clauses_for_contract
+from pz_sales_contract.contract_terms import PARAMETERIZED_TERMS_VERSIONS, SIMPLE_PRINT_TERMS_VERSIONS, clauses_for_contract
 from pz_sales_contract.parties import PAYMENT_INSTRUCTION_FIELDS
 from pz_sales_contract.payment_split import calculate_payment_split, format_percentage
 from pz_sales_contract.sales_contracts.doctype.pz_sales_contract.pz_sales_contract import ITEM_ONLY_DRAFT_SO_SCOPE
@@ -115,7 +115,7 @@ def get_contract_print_context(doc):
         precision = 2
     advance_percentage_input = (
         doc.get('advance_percentage')
-        if doc.get('terms_version') == CURRENT_TERMS_VERSION else 30
+        if doc.get('terms_version') in PARAMETERIZED_TERMS_VERSIONS else 30
     )
     advance_percentage, balance_percentage, advance_amount, balance_amount = calculate_payment_split(
         doc.grand_total, advance_percentage_input, precision

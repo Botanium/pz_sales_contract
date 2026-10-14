@@ -25,6 +25,7 @@ const nativeSources = ["model/model.js", "form/script_manager.js", "form/form.js
     // Evaluate the original save/model/event functions, without rewriting them.
     return [filename, fs.readFileSync(filename, "utf8").replace(/^import .*;\n/gm, "")];
   });
+const nativeIntSource = fs.readFileSync(path.join(frappeApp, "frappe/public/js/frappe/form/controls/int.js"), "utf8");
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 function nativeDesk({ nativeRequests = false } = {}) {
@@ -395,4 +396,32 @@ test("native Save keeps the optional advance percentage default and preserves ex
 test("native Frappe amendment copy treats Print as Draft as a no-copy field", () => {
   const ui = nativeDesk();
   assert.ok(ui.frappe.model.get_no_copy_list("PZ Sales Contract").includes("print_as_draft"));
+});
+
+
+test("native Int input rejects fractions and text before truncation and blocks stale-value save", async () => {
+  const ui = nativeDesk();
+  await ui.setup();
+  let raw = "";
+  const context = { frappe: { ui: { form: { ControlData: class {} } } },
+    cint: (value, fallback) => Number.isNaN(parseInt(value)) ? fallback : parseInt(value), flt: Number };
+  vm.runInNewContext(nativeIntSource, context);
+  const control = new context.frappe.ui.form.ControlInt();
+  control.df = ui.frm.fields_dict.cargo_ready_within_days.df;
+  control.$input = { val: () => raw };
+  ui.frm.fields_dict.cargo_ready_within_days = control;
+  await ui.frm.refresh();
+  for (const value of ["1.5", "0.5", "invalid", "-1", "Infinity"]) {
+    raw = value;
+    assert.throws(() => control.parse(value), /whole number/);
+    const priorSaves = ui.saves.length;
+    await ui.save();
+    assert.equal(ui.saves.length, priorSaves);
+  }
+  for (const value of ["30", "50", "60", "137"]) {
+    raw = value;
+    assert.equal(control.parse(value), Number(value));
+  }
+  raw = "";
+  assert.equal(control.parse(raw), null);
 });
