@@ -366,7 +366,7 @@ class TestPZSalesContract(IntegrationTestCase):
         with self.assertRaises(frappe.ValidationError):
             d.save()
 
-    def test_cargo_readiness_amendment_inherits_and_freezes_the_source(self):
+    def test_cargo_readiness_amendment_inherits_without_rewriting_the_source(self):
         source = contract(cargo_ready_within_days=60, advance_percentage=50, submit=True)
         snapshot = source.terms_snapshot
         source.cancel()
@@ -378,8 +378,10 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertEqual(amendment.cargo_ready_within_days, 60)
         self.assertEqual(amendment.terms_snapshot, snapshot)
         amendment.cargo_ready_within_days = 50
-        with self.assertRaises(frappe.ValidationError):
-            amendment.save()
+        amendment.save()
+        self.assertIn('within 50 calendar days', ' '.join(clauses_for_contract(amendment)))
+        self.assertEqual(source.reload().terms_snapshot, snapshot)
+        self.assertEqual(source.cargo_ready_within_days, 60)
 
     def test_cargo_readiness_validates_and_prints_only_saved_advance_terms(self):
         from bs4 import BeautifulSoup
@@ -405,13 +407,13 @@ class TestPZSalesContract(IntegrationTestCase):
         doc = contract(cargo_ready_within_days=30)
         doc.cargo_ready_within_days = 50
         doc.save()
-        self.assertIn('within 50 calendar days', doc.terms_snapshot)
+        self.assertIn('within 50 calendar days', ' '.join(clauses_for_contract(doc)))
         doc.advance_percentage = 0
         doc.save()
         self.assertNotIn('17. Cargo Readiness', doc.terms_snapshot)
         doc.advance_percentage = 50
         doc.save()
-        self.assertIn('within 50 calendar days', doc.terms_snapshot)
+        self.assertIn('within 50 calendar days', ' '.join(clauses_for_contract(doc)))
         doc.submit()
         snapshot = doc.terms_snapshot
         doc.cargo_ready_within_days = 60
@@ -428,9 +430,138 @@ class TestPZSalesContract(IntegrationTestCase):
         historical.advance_percentage = 60
         historical.save()
         self.assertNotIn('Seller Loading and Iraqi Export', historical.terms_snapshot)
+        original_snapshot = historical.terms_snapshot
         historical.cargo_ready_within_days = 30
+        historical.save()
+        self.assertEqual(historical.terms_snapshot, original_snapshot)
+        self.assertIn('within 30 calendar days', ' '.join(clauses_for_contract(historical)))
+
+    def test_existing_drafts_keep_exact_terms_until_readiness_or_wording_is_explicitly_edited(self):
+        from pz_sales_contract.contract_terms import get_contract_terms_for_editor
+        app_path = Path(frappe.get_app_path('pz_sales_contract'))
+        for version in (None, 'v1', 'v2', 'v3', 'v4', 'v5'):
+            with self.subTest(version=version):
+                doc = contract()
+                snapshot = (snapshot_for_new_contract(advance_percentage=30, version='v5') if version == 'v5'
+                    else (app_path / 'terms_versions' / f'{version or "v1"}.json').read_text())
+                doc.db_set('terms_version', version)
+                doc.db_set('terms_snapshot', snapshot)
+                doc.reload()
+                original = clauses_for_contract(doc)
+                preview = get_contract_terms_for_editor(doc.name)
+                self.assertEqual(preview['text'], '\n\n'.join(original))
+                self.assertFalse(frappe.db.get_value(doc.doctype, doc.name, 'contract_terms_text'))
+                doc.save()
+                self.assertEqual(clauses_for_contract(doc), original)
+                doc.cargo_ready_within_days = 137
+                doc.save().reload()
+                self.assertEqual(doc.terms_version, version)
+                self.assertEqual(doc.terms_snapshot, snapshot)
+                self.assertEqual(clauses_for_contract(doc)[:-1], original)
+                self.assertIn('within 137 calendar days', clauses_for_contract(doc)[-1])
+                doc.contract_terms_text = 'Custom first clause.\n\nCustom final clause.'
+                doc.save()
+                self.assertEqual(clauses_for_contract(doc)[:2], ['Custom first clause.', 'Custom final clause.'])
+                self.assertEqual(doc.terms_snapshot, snapshot)
+                doc.contract_terms_text = ''
+                doc.cargo_ready_within_days = None
+                doc.save()
+                self.assertEqual(clauses_for_contract(doc), original)
+
+    def test_draft_custom_terms_print_fully_escape_markup_and_freeze_after_submit(self):
+        from bs4 import BeautifulSoup
+        from frappe.utils.print_format import download_pdf
+        doc = contract(cargo_ready_within_days=60, advance_percentage=50)
+        original = doc.terms_snapshot
+        custom = [f'Custom clause {i}.' for i in range(1, 26)] + ['Plain wording & agreed conditions.']
+        doc.contract_terms_text = '\n\n'.join(custom)
+        doc.save()
+        self.assertEqual(doc.terms_snapshot, original)
+        doc.advance_percentage = 20
+        doc.save()
+        self.assertEqual(doc.contract_terms_text, '\n\n'.join(custom))
+        with patch('frappe.utils.pdf.get_pdf', return_value=b'%PDF-synthetic-boundary') as binary:
+            download_pdf(doc.doctype, doc.name, format='Petrol Zone Sales Contract', pdf_generator='wkhtmltopdf')
+        html = binary.call_args.args[0]
+        text = BeautifulSoup(html, 'html.parser').get_text()
+        for clause in custom:
+            self.assertIn(clause, text)
+        self.assertNotIn('<script>example</script>', html)
+        self.assertIn('within 60 calendar days', text)
+        doc.advance_percentage = 0
+        doc.save()
+        self.assertNotIn('Cargo Readiness.', ' '.join(clauses_for_contract(doc)))
+        doc.submit()
+        saved_terms = doc.contract_terms_text
+        doc.contract_terms_text = 'Forged submitted terms'
         with self.assertRaises(frappe.ValidationError):
-            historical.save()
+            doc.save()
+        self.assertEqual(doc.reload().contract_terms_text, saved_terms)
+
+    def test_terms_editor_fallback_and_pending_percentage_preview_are_read_only(self):
+        from pz_sales_contract.contract_terms import get_contract_terms_for_editor
+        new = get_contract_terms_for_editor(advance_percentage=50)
+        self.assertIn('pay 50% of the total contract amount', new['text'])
+        doc = contract()
+        preview = get_contract_terms_for_editor(doc.name, advance_percentage=60)
+        self.assertIn('pay 60% of the total contract amount', preview['text'])
+        self.assertEqual(doc.reload().advance_percentage, 30)
+        original = doc.terms_snapshot
+        doc.db_set('terms_snapshot', None)
+        preview = get_contract_terms_for_editor(doc.name)
+        self.assertEqual(preview['text'], '\n\n'.join(json.loads(original)))
+        self.assertIsNone(doc.reload().terms_snapshot)
+        self.assertFalse(doc.contract_terms_text)
+
+    def test_clear_custom_terms_and_new_amendment_preview_resolve_original_version(self):
+        from pz_sales_contract.contract_terms import get_contract_terms_for_editor
+        source = contract(cargo_ready_within_days=60, contract_terms_text='Source custom wording.')
+        source.db_set('terms_version', 'v5')
+        source.db_set('terms_snapshot', snapshot_for_new_contract(advance_percentage=30, version='v5'))
+        source.reload()
+        original = json.loads(source.terms_snapshot)
+        self.assertEqual(get_contract_terms_for_editor(source.name)['text'], 'Source custom wording.')
+        self.assertEqual(get_contract_terms_for_editor(source.name, use_original_terms=1)['text'], '\n\n'.join(original))
+        self.assertIn('pay 60% of the total contract amount', get_contract_terms_for_editor(source.name, advance_percentage=60, use_original_terms=1)['text'])
+        self.assertEqual(source.reload().contract_terms_text, 'Source custom wording.')
+        source.submit().cancel()
+        preview = get_contract_terms_for_editor(amended_from=source.name)
+        self.assertEqual(preview['text'], 'Source custom wording.')
+        fallback = get_contract_terms_for_editor(amended_from=source.name, use_original_terms=1)
+        self.assertEqual(fallback['text'], '\n\n'.join(original))
+        self.assertNotIn('Seller Loading and Iraqi Export', fallback['text'])
+        amendment = frappe.copy_doc(source)
+        amendment.amended_from = source.name
+        amendment.docstatus = 0
+        amendment.sales_order = None
+        amendment.cargo_ready_within_days = 50
+        amendment.contract_terms_text = 'Explicit amendment wording.'
+        amendment.insert()
+        self.assertEqual(amendment.cargo_ready_within_days, 50)
+        self.assertEqual(amendment.contract_terms_text, 'Explicit amendment wording.')
+        self.assertEqual(amendment.terms_snapshot, source.terms_snapshot)
+        self.assertEqual(source.reload().contract_terms_text, 'Source custom wording.')
+
+    def test_clear_readiness_before_first_amendment_save_does_not_restore_deadline(self):
+        source = contract(cargo_ready_within_days=60, submit=True)
+        source.cancel()
+        amendment = frappe.copy_doc(source)
+        amendment.amended_from = source.name
+        amendment.docstatus = 0
+        amendment.sales_order = None
+        amendment.cargo_ready_within_days = None
+        amendment.insert().reload()
+        self.assertFalse(amendment.cargo_ready_within_days)
+        self.assertNotIn('Cargo Readiness.', ' '.join(clauses_for_contract(amendment)))
+        self.assertEqual(source.reload().cargo_ready_within_days, 60)
+
+    def test_custom_terms_print_escapes_even_untrusted_stored_markup(self):
+        from bs4 import BeautifulSoup
+        doc = contract()
+        doc.db_set('contract_terms_text', 'Literal <b>bold</b> & agreed wording.')
+        html = frappe.get_print(doc.doctype, doc.name)
+        self.assertIn('Literal <b>bold</b> & agreed wording.', BeautifulSoup(html, 'html.parser').get_text())
+        self.assertNotIn('<b>bold</b>', html)
 
     def test_missing_optional_print_stamp_is_safe(self):
         import base64
