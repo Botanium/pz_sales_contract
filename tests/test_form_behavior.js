@@ -52,7 +52,7 @@ function desk(doc = newDoc("new-1")) {
   };
   const events = handlers["PZ Sales Contract"];
   events.setup(frm);
-  return { frm, events, childEvents: handlers["PZ Contract Item"], requests, lookups, locals, alerts, queries, fieldProperties,
+  return { frm, events, childEvents: handlers["PZ Contract Item"], requests, lookups, locals, alerts, queries, fieldProperties, frappe,
     async refresh() { events.refresh(frm); await flush(); },
     async respond(index = requests.length - 1, values = profile) {
       requests[index].callback({ message: values }); await flush();
@@ -735,15 +735,79 @@ test("cargo readiness is optional calendar days, with a clear no-advance omissio
   assert.match(ui.fieldProperties["cargo_ready_within_days.description"], /0% advance.*omitted/);
 });
 
-test("cargo readiness stays hidden on historical versions and freezes on submitted or amended v6", async () => {
+test("cargo readiness is visible for history and read-only after submission", async () => {
   for (const version of [null, "v1", "v2", "v3", "v4", "v5"]) {
     const ui = desk(newDoc("old", { __islocal: 0, terms_version: version }));
     await ui.refresh();
-    assert.equal(ui.fieldProperties["cargo_ready_within_days.hidden"], true);
+    assert.equal(ui.fieldProperties["cargo_ready_within_days.hidden"], false);
   }
-  for (const extra of [{ docstatus: 1 }, { amended_from: "original" }]) {
+  for (const extra of [{ docstatus: 1 }, { docstatus: 2 }]) {
     const ui = desk(newDoc("v6", { __islocal: 0, terms_version: "v6", ...extra }));
     await ui.refresh();
     assert.equal(ui.fieldProperties["cargo_ready_within_days.read_only"], true);
   }
+});
+
+test("saved pre-v6 drafts expose cargo readiness without changing their terms version", async () => {
+  for (const version of [null, "v1", "v2", "v3", "v4", "v5"]) {
+    const ui = desk(newDoc("saved-draft", { __islocal: 0, docstatus: 0, terms_version: version }));
+    await ui.refresh();
+    assert.equal(ui.fieldProperties["cargo_ready_within_days.hidden"], false);
+    assert.equal(ui.fieldProperties["cargo_ready_within_days.read_only"], false);
+    assert.equal(ui.frm.doc.terms_version, version);
+  }
+});
+
+test("terms preview never edits the document; explicit draft edit copies saved wording", async () => {
+  const ui = desk(newDoc("saved-draft", { __islocal: 0, docstatus: 0, terms_version: "v5" }));
+  let preview;
+  ui.frm.fields_dict.contract_terms_preview = { $wrapper: { html(value) { preview = value; } } };
+  ui.frappe.xcall = async () => ({ text: "1. Original saved wording", html: "<p>1. Original saved wording</p>" });
+  await ui.refresh();
+  assert.match(preview, /Original saved wording/);
+  assert.equal(ui.frm.doc.contract_terms_text, undefined);
+  await ui.events.edit_contract_terms(ui.frm);
+  assert.equal(ui.frm.doc.contract_terms_text, "1. Original saved wording");
+  assert.equal(ui.fieldProperties["contract_terms_text.hidden"], false);
+  ui.frm.doc.contract_terms_text = "Custom wording";
+  ui.frm.doc.advance_percentage = 50;
+  ui.events.advance_percentage(ui.frm);
+  assert.equal(ui.frm.doc.contract_terms_text, "Custom wording");
+  ui.frm.doc.docstatus = 1;
+  await ui.refresh();
+  assert.equal(ui.fieldProperties["contract_terms_text.read_only"], true);
+  assert.equal(ui.fieldProperties["edit_contract_terms.hidden"], true);
+});
+
+test("late terms preview cannot overwrite a newer edit or a different form", async () => {
+  const ui = desk();
+  let reply;
+  ui.frm.fields_dict.contract_terms_preview = { $wrapper: { html() {} } };
+  ui.frappe.xcall = () => new Promise(resolve => { reply = resolve; });
+  const pending = ui.events.edit_contract_terms(ui.frm);
+  ui.frm.doc.contract_terms_text = "User text entered while loading";
+  reply({ text: "Old terms", html: "<p>Old terms</p>" });
+  await pending;
+  assert.equal(ui.frm.doc.contract_terms_text, "User text entered while loading");
+});
+
+test("clearing custom terms requests the original fallback, and amendment previews identify their source", async () => {
+  const ui = desk(newDoc("saved", { __islocal: 0, terms_version: "v5", contract_terms_text: "Saved custom wording" }));
+  const calls = [];
+  let preview;
+  ui.frm.fields_dict.contract_terms_preview = { $wrapper: { html(value) { preview = value; } } };
+  ui.frappe.xcall = async (_method, args) => {
+    calls.push(args);
+    return args.use_original_terms ? { text: "Original v5", html: "<p>Original v5</p>" } : { text: "Saved custom wording", html: "<p>Saved custom wording</p>" };
+  };
+  await ui.refresh();
+  await ui.frm.set_value("contract_terms_text", "");
+  assert.equal(calls.at(-1).use_original_terms, 1);
+  assert.match(preview, /Original v5/);
+  await ui.events.edit_contract_terms(ui.frm);
+  assert.equal(ui.frm.doc.contract_terms_text, "Original v5");
+  ui.frm.doc = newDoc("new-amendment", { amended_from: "cancelled-v5", terms_version: "v5" });
+  await ui.events.edit_contract_terms(ui.frm);
+  assert.equal(calls.at(-1).amended_from, "cancelled-v5");
+  assert.equal(calls.at(-1).name, null);
 });

@@ -71,6 +71,10 @@
     "force_majeure_threshold",
     "governing_law",
     "courts",
+    "terms_conditions_section",
+    "contract_terms_preview",
+    "edit_contract_terms",
+    "contract_terms_text",
     "payment",
     "bank_receiving_account",
     "cash_receiving_account",
@@ -718,6 +722,27 @@
       "fieldtype": "Int",
       "label": "Cargo Ready Within (Days)",
       "description": "Optional calendar days after receipt of the agreed advance payment. Leave blank to omit the readiness commitment. With 0% advance, no advance-triggered readiness commitment is printed."
+    },
+    {
+      "fieldname": "terms_conditions_section",
+      "fieldtype": "Section Break",
+      "label": "Terms & Conditions",
+      "collapsible": 1
+    },
+    {
+      "fieldname": "contract_terms_preview",
+      "fieldtype": "HTML"
+    },
+    {
+      "fieldname": "edit_contract_terms",
+      "fieldtype": "Button",
+      "label": "Edit contract wording"
+    },
+    {
+      "fieldname": "contract_terms_text",
+      "fieldtype": "Long Text",
+      "label": "Contract wording",
+      "description": "Custom wording prints as entered. Separate clauses with a blank line. Review payment percentages when changing the advance. Clear this field to restore the original saved terms. Cargo readiness is generated separately from the days and advance fields; do not duplicate it here."
     }
   ],
   "permissions": [

@@ -425,3 +425,25 @@ test("native Int input rejects fractions and text before truncation and blocks s
   raw = "";
   assert.equal(control.parse(raw), null);
 });
+
+test("native saved v5 draft exposes cargo days and serializes explicit custom wording", async () => {
+  const ui = nativeDesk();
+  await ui.setup();
+  ui.frm.doc.__islocal = 0;
+  ui.frm.doc.terms_version = "v5";
+  ui.frm.doc.cargo_ready_within_days = 137;
+  ui.frm.doc.contract_terms_text = "Custom first clause.\n\nCustom second clause.";
+  await ui.frm.refresh();
+  assert.equal(ui.frm.fields_dict.cargo_ready_within_days.df.hidden, false);
+  assert.equal(ui.frm.fields_dict.cargo_ready_within_days.df.read_only, false);
+  assert.equal(ui.frm.fields_dict.contract_terms_text.df.hidden, false);
+  assert.equal(ui.frm.fields_dict.contract_terms_text.df.read_only, false);
+  ui.frm.doc.__unsaved = 1;
+  await ui.save();
+  assert.equal(ui.saves.at(-1).cargo_ready_within_days, 137);
+  assert.equal(ui.saves.at(-1).contract_terms_text, "Custom first clause.\n\nCustom second clause.");
+  ui.frm.doc.docstatus = 1;
+  await ui.frm.refresh();
+  assert.equal(ui.frm.fields_dict.cargo_ready_within_days.df.read_only, true);
+  assert.equal(ui.frm.fields_dict.contract_terms_text.df.read_only, true);
+});

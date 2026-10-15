@@ -106,7 +106,7 @@ def snapshot_for_new_contract(original=None, advance_percentage=30, cargo_ready_
     return snapshot
 
 
-def clauses_for_contract(doc):
+def snapshot_clauses_for_contract(doc):
     """Render saved clauses or the pinned version archive for a missing snapshot."""
     snapshot = doc.get('terms_snapshot')
     if not snapshot:
@@ -117,3 +117,56 @@ def clauses_for_contract(doc):
         else:
             snapshot = _snapshot_for_version(version)
     return json.loads(_validated_snapshot(snapshot))
+
+
+def general_clauses_for_contract(doc):
+    """Saved override, or exact historical clauses without the managed readiness line."""
+    override = doc.get('contract_terms_text')
+    if override and str(override).strip():
+        return [part.strip() for part in str(override).replace('\r\n', '\n').split('\n\n') if part.strip()]
+    clauses = snapshot_clauses_for_contract(doc)
+    if doc.get('terms_version') == 'v6' and len(clauses) == 17 and clauses[-1].startswith('17. Cargo Readiness.'):
+        clauses = clauses[:-1]
+    return clauses
+
+
+def clauses_for_contract(doc):
+    from pz_sales_contract.cargo_readiness import readiness_clause
+
+    clauses = general_clauses_for_contract(doc)
+    # Truly historical records without a saved field still resolve their original
+    # 30% split; v5/v6 use their saved adjustable split.
+    percentage = doc.get('advance_percentage') if doc.get('terms_version') in PARAMETERIZED_TERMS_VERSIONS else 30
+    readiness = readiness_clause(doc.get('cargo_ready_within_days'), percentage)
+    if readiness:
+        clauses = clauses + [readiness.replace('17. ', f'{len(clauses) + 1}. ', 1)]
+    return clauses
+
+
+@frappe.whitelist()
+def get_contract_terms_for_editor(name=None, advance_percentage=None, amended_from=None, use_original_terms=0):
+    """Read-only form preview; never materialize fallback clauses on an old record."""
+    from html import escape
+
+    if name or amended_from:
+        doc = frappe.get_doc('PZ Sales Contract', name or amended_from)
+        doc.check_permission('read')
+        if use_original_terms in (1, '1', True):
+            doc.contract_terms_text = None
+        if amended_from and not name:
+            doc.check_permission('amend')
+            if doc.docstatus != 2:
+                frappe.throw('Amendments require a cancelled source contract')
+        if (doc.docstatus == 0 and not doc.amended_from and not doc.get('contract_terms_text')
+                and doc.get('terms_version') in PARAMETERIZED_TERMS_VERSIONS and advance_percentage is not None):
+            # Preview an explicitly edited but unsaved percentage without writing
+            # the record or replacing an existing custom wording override.
+            doc.terms_snapshot = snapshot_for_new_contract(advance_percentage=advance_percentage,
+                version=doc.terms_version)
+    else:
+        if not frappe.has_permission('PZ Sales Contract', ptype='create'):
+            frappe.throw('Not permitted to create contracts', frappe.PermissionError)
+        doc = frappe._dict(terms_version=CURRENT_TERMS_VERSION, advance_percentage=advance_percentage,
+            terms_snapshot=snapshot_for_new_contract(advance_percentage=advance_percentage))
+    clauses = general_clauses_for_contract(doc)
+    return dict(text='\n\n'.join(clauses), html=''.join('<p>' + escape(clause).replace('\n', '<br>') + '</p>' for clause in clauses))

@@ -79,12 +79,49 @@ function guardCargoReadinessInput(frm) {
 
 function updateCargoReadiness(frm) {
   guardCargoReadinessInput(frm);
-  const supported = (frm.is_new() && !frm.doc.amended_from) || frm.doc.terms_version === "v6";
-  frm.set_df_property("cargo_ready_within_days", "hidden", !supported);
-  frm.set_df_property("cargo_ready_within_days", "read_only", !supported || Number(frm.doc.docstatus || 0) !== 0 || Boolean(frm.doc.amended_from));
+  frm.set_df_property("cargo_ready_within_days", "hidden", false);
+  frm.set_df_property("cargo_ready_within_days", "read_only", Number(frm.doc.docstatus || 0) !== 0);
   frm.set_df_property("cargo_ready_within_days", "description", parsedAdvancePercentage(frm.doc.advance_percentage) === 0
     ? "With 0% advance, no advance-triggered cargo readiness commitment is printed. Any entered days are omitted."
     : "Optional calendar days after receipt of the agreed advance payment. Leave blank to omit the readiness commitment.");
+}
+
+async function loadContractTerms(frm, edit = false) {
+  const wrapper = frm.fields_dict?.contract_terms_preview?.$wrapper;
+  if (!wrapper || !frappe.xcall) return;
+  const doc = frm.doc;
+  const token = {};
+  frm._pzTermsRequest = token;
+  const previousText = doc.contract_terms_text;
+  const previousPercentage = doc.advance_percentage;
+  try {
+    const result = await frappe.xcall("pz_sales_contract.contract_terms.get_contract_terms_for_editor", {
+      name: frm.is_new() ? null : doc.name,
+      advance_percentage: doc.advance_percentage,
+      amended_from: frm.is_new() ? doc.amended_from : null,
+      use_original_terms: !String(doc.contract_terms_text || "").trim() ? 1 : 0,
+    });
+    if (frm.doc !== doc || frm._pzTermsRequest !== token || doc.contract_terms_text !== previousText
+      || doc.advance_percentage !== previousPercentage) return;
+    wrapper.html(result.html);
+    if (edit && Number(doc.docstatus || 0) === 0) {
+      await frm.set_value("contract_terms_text", result.text);
+      updateContractTermsVisibility(frm);
+    }
+  } catch (error) {
+    if (frm.doc === doc && frm._pzTermsRequest === token) {
+      wrapper.text?.("Contract terms could not be loaded. Retry by reopening the form; saved terms are unchanged.");
+    }
+  }
+}
+
+function updateContractTermsVisibility(frm) {
+  const custom = Boolean(String(frm.doc.contract_terms_text || "").trim());
+  const frozen = Number(frm.doc.docstatus || 0) !== 0;
+  frm.set_df_property("contract_terms_text", "hidden", !custom);
+  frm.set_df_property("contract_terms_text", "read_only", frozen);
+  frm.set_df_property("contract_terms_preview", "hidden", custom);
+  frm.set_df_property("edit_contract_terms", "hidden", custom || frozen);
 }
 
 function validateCargoReadiness(frm) {
@@ -712,6 +749,8 @@ frappe.ui.form.on("PZ Sales Contract", {
     frm.set_df_property("contract_location", "reqd", usdEntry);
     if (usdEntry && frm.doc.currency !== "USD") frm.set_value("currency", "USD");
     updateCargoReadiness(frm);
+    updateContractTermsVisibility(frm);
+    loadContractTerms(frm);
     const simplifiedContract = ["v2", "v3", "v4", "v5", "v6"].includes(frm.doc.terms_version) || (frm.is_new() && !frm.doc.amended_from);
     const advancePercentageEditable = (frm.is_new() && !frm.doc.amended_from)
       || (["v5", "v6"].includes(frm.doc.terms_version) && Number(frm.doc.docstatus || 0) === 0 && !frm.doc.amended_from);
@@ -789,9 +828,12 @@ frappe.ui.form.on("PZ Sales Contract", {
       loadCompanyDefaults(frm, frm.doc.company);
     }
   },
+  edit_contract_terms(frm) { return loadContractTerms(frm, true); },
+  contract_terms_text(frm) { updateContractTermsVisibility(frm); if (!String(frm.doc.contract_terms_text || "").trim()) return loadContractTerms(frm); },
   cargo_ready_within_days(frm) { validateCargoReadiness(frm); },
   advance_percentage(frm) {
     updateCargoReadiness(frm);
+    if (!String(frm.doc.contract_terms_text || "").trim()) loadContractTerms(frm);
     if (hasFixedHistoricalSplit(frm) && parsedAdvancePercentage(frm.doc.advance_percentage) !== defaultAdvancePercentage) {
       frappe.throw(__("Historical contract versions retain their original 30% advance and 70% balance."));
     }

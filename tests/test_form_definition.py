@@ -203,6 +203,15 @@ class TestContractFormDefinition(unittest.TestCase):
         self.assertIn("advance_percentage", self.contract["field_order"])
         self.assertIn("Required advance", (ROOT / "pz_sales_contract/sales_contracts/doctype/pz_sales_contract/pz_sales_contract.json").read_text())
 
+    def test_terms_editor_is_collapsed_plain_text_and_not_editable_after_submit(self):
+        fields = {field['fieldname']: field for field in self.contract['fields']}
+        self.assertEqual(fields['terms_conditions_section']['label'], 'Terms & Conditions')
+        self.assertEqual(fields['terms_conditions_section']['collapsible'], 1)
+        self.assertEqual(fields['contract_terms_text']['fieldtype'], 'Long Text')
+        self.assertFalse(fields['contract_terms_text'].get('allow_on_submit'))
+        self.assertEqual(fields['terms_snapshot']['hidden'], 1)
+        self.assertEqual(fields['terms_snapshot']['read_only'], 1)
+
     def test_stamp_is_optional_print_asset_not_a_contract_field(self):
         fieldnames = {field["fieldname"] for field in self.contract["fields"]}
         self.assertNotIn("stamp", fieldnames)
@@ -441,7 +450,7 @@ class TestContractFormDefinition(unittest.TestCase):
         template = (ROOT / "pz_sales_contract/templates/contract.html").read_text()
         legacy = template.split("{% if simple_print %}", 1)[1].split("{% else %}", 1)[1]
         self.assertIn("clauses[start:end]", legacy)
-        self.assertIn("[(0,8),(8,15)]", legacy)
+        self.assertIn("range(0, clauses|length, 8)", legacy)
 
 
 if __name__ == "__main__":

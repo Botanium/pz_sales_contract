@@ -154,7 +154,10 @@ class PZSalesContract(Document):
             self.terms_version = original.get('terms_version')
             source_percentage = original.get('advance_percentage') if original.get('terms_version') in PARAMETERIZED_TERMS_VERSIONS else 30
             self.advance_percentage = float(normalize_advance_percentage(source_percentage))
-            self.cargo_ready_within_days = original.get('cargo_ready_within_days')
+            if self.get('cargo_ready_within_days') is None:
+                self.cargo_ready_within_days = original.get('cargo_ready_within_days')
+            if self.get('contract_terms_text') is None:
+                self.contract_terms_text = original.get('contract_terms_text')
             self.entry_policy_version = original.get('entry_policy_version')
             self.party_entry_version = original.get('party_entry_version')
         else:
@@ -305,9 +308,9 @@ class PZSalesContract(Document):
             cargo_days = normalize_cargo_ready_days(self.get('cargo_ready_within_days'))
         except ValueError as exc:
             frappe.throw(str(exc))
-        if self.get('terms_version') != 'v6' and cargo_days is not None:
-            frappe.throw('Cargo readiness cannot be added to historical contracts')
         self.cargo_ready_within_days = cargo_days
+        if self.get('contract_terms_text') is not None and not isinstance(self.contract_terms_text, str):
+            frappe.throw('Contract wording must be plain text')
         self.discount_amount = normalize_discount(self.get('discount_amount'))
         old = self.get_doc_before_save()
         if old:
@@ -320,9 +323,10 @@ class PZSalesContract(Document):
                 frappe.throw(str(exc))
             percentage_changed = advance_percentage != old_advance_percentage
             readiness_changed = cargo_days != normalize_cargo_ready_days(old.get('cargo_ready_within_days'))
-            if readiness_changed and (old.docstatus != 0 or self.amended_from or self.get('terms_version') != 'v6'):
-                frappe.throw('Cargo readiness cannot be changed on submitted contracts or amendments')
-            if percentage_changed or readiness_changed:
+            terms_changed = (self.get('contract_terms_text') or '') != (old.get('contract_terms_text') or '')
+            if (readiness_changed or terms_changed) and old.docstatus != 0:
+                frappe.throw('Cargo readiness and contract wording cannot be changed after submission')
+            if percentage_changed:
                 if old.docstatus != 0:
                     frappe.throw('The advance percentage cannot be changed after contract submission')
                 if self.amended_from or self.get('terms_version') not in PARAMETERIZED_TERMS_VERSIONS:

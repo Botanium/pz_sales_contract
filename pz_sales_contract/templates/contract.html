@@ -60,7 +60,7 @@
 .contract .num { text-align:right; }
 .contract .totals { margin-left:45%; width:55%; }
 .contract .totals .total td { background:#fff0cd; font-weight:bold; border-top:2px solid #efa90a; }
-.contract .terms p { font-size:9pt!important; line-height:1.20!important; margin:0 0 8px!important; page-break-inside:avoid; break-inside:avoid; }
+.contract .terms p { white-space:pre-line; font-size:9pt!important; line-height:1.20!important; margin:0 0 8px!important; page-break-inside:avoid; break-inside:avoid; }
 .contract .schedule .schedule-label { width:31%; color:#555; font-size:8.5pt; font-weight:normal; }
 .contract .schedule td { padding:5px!important; font-size:8.8pt; }
 .contract .signature { height:90px; border-bottom:1px solid #777; margin:20px 0 9px; }
@@ -93,7 +93,7 @@
 {% if doc.terms_version in ['v5', 'v6'] %}<p class="quiet">The Contract Amount is the discounted goods amount only. Applicable taxes, if any, are recorded and calculated separately on the linked Sales Order or invoice; they are not included in the Contract Amount or the {{ advance_label|e }} / {{ balance_label|e }} calculation.</p>{% else %}<p class="quiet">The Contract Amount is the discounted goods amount only. Applicable taxes, if any, are recorded and calculated separately on the linked Sales Order or invoice; they are not included in the Contract Amount or the 30% / 70% calculation.</p>{% endif %}
 <p><strong>Incoterm:</strong> {{ doc.incoterm|e }} · <strong>Named place:</strong> {{ doc.named_place|e }}</p>
 </section>
-{% for start, end in [(0,5),(5,10),(10,15),(15,20)] %}{% if clauses[start:end] %}<section class="page terms">{{ header('Contract terms') }}<h2>Contract Terms</h2>
+{% for start in range(0, clauses|length, 5) %}{% set end = start + 5 %}{% if clauses[start:end] %}<section class="page terms">{{ header('Contract terms') }}<h2>Contract Terms</h2>
 {% for clause in clauses[start:end] %}<p>{{ clause|e }}</p>{% endfor %}
 </section>{% endif %}{% endfor %}
 <section class="page">
@@ -128,7 +128,7 @@
 </tbody></table>
 <p class="quiet">The 24-business-hour period accumulates open hours in this agreed calendar. Receipt outside those hours starts at the next opening time. The collection grace period does not extend the payment deadline.</p>
 </section>
-{% for start, end in [(0,8),(8,15)] %}
+{% for start in range(0, clauses|length, 8) %}{% set end = start + 8 %}
 <section class="page terms">{{ header('Contract terms') }}<h2>Contract Terms</h2>
 {% for clause in clauses[start:end] %}<p>{{ clause|e }}</p>{% endfor %}
 </section>{% endfor %}
