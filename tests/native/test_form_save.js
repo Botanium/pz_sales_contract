@@ -431,6 +431,7 @@ test("native saved v5 draft exposes cargo days and serializes explicit custom wo
   await ui.setup();
   ui.frm.doc.__islocal = 0;
   ui.frm.doc.terms_version = "v5";
+  ui.frm.doc.named_place = "Saved historical pickup place";
   ui.frm.doc.cargo_ready_within_days = 137;
   ui.frm.doc.contract_terms_text = "Custom first clause.\n\nCustom second clause.";
   await ui.frm.refresh();
