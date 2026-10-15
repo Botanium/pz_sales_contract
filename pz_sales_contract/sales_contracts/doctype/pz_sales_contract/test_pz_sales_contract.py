@@ -542,6 +542,19 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertEqual(amendment.terms_snapshot, source.terms_snapshot)
         self.assertEqual(source.reload().contract_terms_text, 'Source custom wording.')
 
+    def test_clear_readiness_before_first_amendment_save_does_not_restore_deadline(self):
+        source = contract(cargo_ready_within_days=60, submit=True)
+        source.cancel()
+        amendment = frappe.copy_doc(source)
+        amendment.amended_from = source.name
+        amendment.docstatus = 0
+        amendment.sales_order = None
+        amendment.cargo_ready_within_days = None
+        amendment.insert().reload()
+        self.assertFalse(amendment.cargo_ready_within_days)
+        self.assertNotIn('Cargo Readiness.', ' '.join(clauses_for_contract(amendment)))
+        self.assertEqual(source.reload().cargo_ready_within_days, 60)
+
     def test_custom_terms_print_escapes_even_untrusted_stored_markup(self):
         from bs4 import BeautifulSoup
         doc = contract()

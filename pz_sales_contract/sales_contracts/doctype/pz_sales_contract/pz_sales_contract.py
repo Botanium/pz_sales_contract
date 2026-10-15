@@ -154,8 +154,8 @@ class PZSalesContract(Document):
             self.terms_version = original.get('terms_version')
             source_percentage = original.get('advance_percentage') if original.get('terms_version') in PARAMETERIZED_TERMS_VERSIONS else 30
             self.advance_percentage = float(normalize_advance_percentage(source_percentage))
-            if self.get('cargo_ready_within_days') is None:
-                self.cargo_ready_within_days = original.get('cargo_ready_within_days')
+            # Native amendment copies already carry source days. A cleared/null
+            # input means omission; never restore a deadline the operator removed.
             if self.get('contract_terms_text') is None:
                 self.contract_terms_text = original.get('contract_terms_text')
             self.entry_policy_version = original.get('entry_policy_version')
