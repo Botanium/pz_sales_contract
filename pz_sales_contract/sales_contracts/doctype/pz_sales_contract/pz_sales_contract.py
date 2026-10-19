@@ -712,6 +712,11 @@ def validate_item_only_sales_order_before_submit(doc, method=None):
     if len(doc.items) != len(contract.items):
         frappe.throw('Sales Order product lines must match the linked contract')
     for sales_item, contract_item in zip(doc.items, contract.items, strict=True):
+        # A nonblank description is agreed product wording, including legacy
+        # snapshots. Blank contracts specify no wording; preserve ERPNext's
+        # existing Item-description fallback for those lines.
+        if contract_item.get('description') and sales_item.get('description') != contract_item.description:
+            frappe.throw(f'Sales Order description on row {sales_item.idx} must match the linked contract')
         values = (
             sales_item.item_code == contract_item.item_code,
             Decimal(str(sales_item.qty or 0)) == Decimal(str(contract_item.qty or 0)),

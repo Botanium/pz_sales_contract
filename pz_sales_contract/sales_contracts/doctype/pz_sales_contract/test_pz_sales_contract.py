@@ -1729,6 +1729,78 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertEqual(order.docstatus,1)
         self.assertEqual(order.net_total,d.grand_total)
 
+    def test_changed_sales_order_description_cannot_override_signed_contract_wording(self):
+        doc = contract(insert=False)
+        doc.items[0].description = 'Contract-specific product wording'
+        doc.insert().submit()
+        order = frappe.get_doc('Sales Order', doc.sales_order)
+        self.assertEqual(order.items[0].description, doc.items[0].description)
+        order.delivery_date = add_days(today(), 10)
+        order.items[0].delivery_date = order.delivery_date
+        for description in ('Different downstream product wording', '', None):
+            with self.subTest(description=description):
+                order.reload()
+                order.delivery_date = add_days(today(), 10)
+                order.items[0].delivery_date = order.delivery_date
+                order.items[0].description = description
+                order.save()
+                with self.assertRaisesRegex(frappe.ValidationError, 'description.*match the linked contract'):
+                    order.submit()
+                self.assertEqual(doc.reload().items[0].description, 'Contract-specific product wording')
+
+    def test_unchanged_sales_order_descriptions_keep_native_sanitized_and_legacy_wording(self):
+        for description in ('Plain A & B\nSecond line', '<b>Product</b>\nA & B',
+                'Size < 10 & > 2', 'Literal &amp; code',
+                '<p>Legacy &amp; description<br>Second line</p>'):
+            with self.subTest(description=description):
+                doc = contract(insert=False)
+                doc.items[0].description = description
+                doc.insert().submit()
+                saved_description = doc.reload().items[0].description
+                order = frappe.get_doc('Sales Order', doc.sales_order)
+                self.assertEqual(order.items[0].description, saved_description)
+                order.delivery_date = add_days(today(), 10)
+                order.items[0].delivery_date = order.delivery_date
+                order.save().submit()
+                self.assertEqual(order.docstatus, 1)
+                self.assertEqual(doc.reload().items[0].description, saved_description)
+
+    def test_blank_contract_descriptions_preserve_native_order_fallback(self):
+        for description in (None, ''):
+            with self.subTest(description=description):
+                doc = contract(insert=False)
+                doc.items[0].description = description
+                doc.insert().submit()
+                self.assertFalse(doc.reload().items[0].description)
+                order = frappe.get_doc('Sales Order', doc.sales_order)
+                order.delivery_date = add_days(today(), 10)
+                order.items[0].delivery_date = order.delivery_date
+                order.save().submit()
+                self.assertEqual(order.docstatus, 1)
+                self.assertFalse(doc.reload().items[0].description)
+
+    def test_sales_order_description_comparison_is_per_contract_line(self):
+        doc = contract(insert=False)
+        doc.items[0].description = 'First product wording'
+        second = doc.items[0].as_dict()
+        second.update(name=None, idx=2, description='Second product wording')
+        doc.append('items', second)
+        doc.insert().submit()
+        order = frappe.get_doc('Sales Order', doc.sales_order)
+        order.delivery_date = add_days(today(), 10)
+        for row in order.items:
+            row.delivery_date = order.delivery_date
+        order.items[0].description, order.items[1].description = (
+            order.items[1].description, order.items[0].description)
+        order.save()
+        with self.assertRaisesRegex(frappe.ValidationError, 'description.*match the linked contract'):
+            order.submit()
+        order.reload()
+        for order_item, contract_item in zip(order.items, doc.items, strict=True):
+            order_item.description = contract_item.description
+        order.save().submit()
+        self.assertEqual(order.docstatus, 1)
+
     def test_modified_contract_lines_cannot_be_manually_submitted_on_sales_order(self):
         d=contract(submit=True,submit_sales_order=False)
         order=frappe.get_doc('Sales Order',d.sales_order)
