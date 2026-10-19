@@ -83,8 +83,8 @@ def format_product_description(value):
     return text
 
 
-def get_contract_print_context(doc):
-    """Build every print value from a saved, permission-checked contract."""
+def _saved_printable_contract(doc):
+    """Reload the source and enforce native document print access/status rules."""
     if doc.get('doctype') != 'PZ Sales Contract' or not doc.get('name'):
         frappe.throw('A saved PZ Sales Contract is required for printing')
     doc = frappe.get_doc('PZ Sales Contract', doc.get('name'))
@@ -96,6 +96,12 @@ def get_contract_print_context(doc):
         frappe.throw('Not allowed to print draft documents', frappe.PermissionError)
     if doc.docstatus == 2 and not settings.allow_print_for_cancelled:
         frappe.throw('Not allowed to print cancelled documents', frappe.PermissionError)
+    return doc
+
+
+def get_contract_print_context(doc):
+    """Build every print value from a saved, permission-checked contract."""
+    doc = _saved_printable_contract(doc)
     path = Path(frappe.get_app_path('pz_sales_contract'))
     holiday_data = frappe.parse_json(doc.holiday_calendar_snapshot) if doc.holiday_calendar_snapshot else {
         'name': '', 'from_date': '', 'to_date': '', 'holidays': [],
@@ -156,20 +162,30 @@ def pdf_header_html(soup, head, content, styles, html_id, css):
     return '<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;padding:0;font-family:Arial,sans-serif;font-size:8pt;color:#555}.pz-running,.pz-footer{border-bottom:1px solid #efa90a;padding:3px 0}strong{color:#815200}</style></head><body>'+str(content)+'</body></html>'
 
 
-def get_blank_contract_html():
-    """Render a static worksheet, with no contract, defaults, terms or stamp lookup."""
-    if frappe.session.user == 'Guest' or not all(
-        frappe.has_permission('PZ Sales Contract', ptype=action) for action in ('read', 'print')
-    ):
+def get_blank_contract_html(source_contract=None):
+    """Copy only the chosen saved seller/legal context into a blank worksheet."""
+    if frappe.session.user == 'Guest':
         frappe.throw('Not permitted to print PZ Sales Contract templates', frappe.PermissionError)
+    if not isinstance(source_contract, str) or not source_contract.strip():
+        frappe.throw('Choose a saved contract with the seller details, terms and Incoterm to reuse')
+    doc = _saved_printable_contract({'doctype': 'PZ Sales Contract', 'name': source_contract})
+    # Never give this template a Document or the populated-print context. Buyer,
+    # item, price, bank, date, place and reference values are intentionally absent.
+    legacy = doc.get('party_entry_version') != 'direct-v1'
+    seller = dict(name=doc.seller_name or doc.company, address=doc.seller_address_display,
+        email=doc.seller_email or ('info@petrol-zone.com' if legacy else ''),
+        phone=doc.seller_phone or ('00964 770 000 3737 · 00971 505 65 1305' if legacy else ''),
+        signatory=doc.seller_signatory, position=doc.seller_position)
     logo_path = Path(frappe.get_app_path('pz_sales_contract', 'public', 'petrol_zone_logo.png'))
     logo = 'data:image/png;base64,' + base64.b64encode(logo_path.read_bytes()).decode()
-    return frappe.render_template('pz_sales_contract/templates/blank_contract.html', {'logo': logo})
+    return frappe.render_template('pz_sales_contract/templates/blank_contract.html', dict(
+        logo=logo, stamp=_load_print_stamp(frappe.get_site_path('private', 'files')),
+        seller=seller, incoterm=doc.incoterm, clauses=clauses_for_contract(doc)))
 
 
 @frappe.whitelist()
-def print_blank_template():
-    """Open a printable HTML worksheet without creating or selecting a document."""
-    html = get_blank_contract_html()
+def print_blank_template(source_contract=None):
+    """Preview a worksheet without creating or modifying any document."""
+    html = get_blank_contract_html(source_contract)
     frappe.local.response.update(type='download', filename='petrol-zone-blank-contract.html',
         filecontent=html, content_type='text/html; charset=utf-8', display_content_as='inline')

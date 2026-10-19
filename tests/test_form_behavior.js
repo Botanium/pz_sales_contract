@@ -19,12 +19,13 @@ const newDoc = (name, extra = {}) => ({
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 function desk(doc = newDoc("new-1")) {
-  const buttons = {}, opened = [];
+  const buttons = {}, opened = [], prompts = [];
   const handlers = {}, requests = [], lookups = [], alerts = [], queries = {}, fieldProperties = {};
   const locals = { "PZ Contract Item": {} };
   const frappe = {
     ui: { form: { on: (doctype, events) => { handlers[doctype] = events; } } },
     call: (request) => requests.push(request),
+    prompt: (...args) => prompts.push(args),
     db: { get_value: (doctype, name, fields, callback) => lookups.push({ doctype, name, fields, callback }) },
     model: { set_value: (cdt, cdn, fieldname, value) => {
       const row = locals[cdt][cdn];
@@ -53,7 +54,7 @@ function desk(doc = newDoc("new-1")) {
   };
   const events = handlers["PZ Sales Contract"];
   events.setup(frm);
-  return { frm, events, childEvents: handlers["PZ Contract Item"], requests, lookups, locals, alerts, queries, fieldProperties, frappe, buttons, opened,
+  return { frm, events, childEvents: handlers["PZ Contract Item"], requests, lookups, locals, alerts, queries, fieldProperties, frappe, buttons, opened, prompts,
     async refresh() { events.refresh(frm); await flush(); },
     async respond(index = requests.length - 1, values = profile) {
       requests[index].callback({ message: values }); await flush();
@@ -832,14 +833,26 @@ test("descriptions survive refresh, Item changes, clears and late lookup replies
   assert.equal(row.description, "Edited while lookup is pending");
 });
 
-test("blank printing opens the static endpoint without serializing or saving any form", async () => {
+test("blank printing selects a saved legal context without saving or serializing the form", async () => {
   for (const extra of [{}, { __islocal: 0, docstatus: 0 }, { __islocal: 0, docstatus: 1 }]) {
     const ui = desk(newDoc("PRIVATE-CONTRACT", { customer_name: "PRIVATE-BUYER", items: [{ description: "PRIVATE-PRODUCT", rate: 987654 }], ...extra }));
     await ui.refresh();
     const before = JSON.stringify(ui.frm.doc);
     const calls = ui.requests.length;
     ui.buttons["Print Blank Template"]();
-    assert.deepEqual(ui.opened, [["/api/method/pz_sales_contract.printing.print_blank_template", "_blank", "noopener,noreferrer"]]);
+    assert.equal(ui.opened.length, 0);
+    const [fields, callback, title, label] = ui.prompts[0];
+    assert.equal(title, "Print Blank Template");
+    assert.equal(label, "Preview Blank Template");
+    assert.equal(fields[0].fieldname, "source_contract");
+    assert.equal(fields[0].fieldtype, "Link");
+    assert.equal(fields[0].options, "PZ Sales Contract");
+    assert.equal(fields[0].reqd, 1);
+    assert.equal(fields[0].default, ui.frm.is_new() ? undefined : ui.frm.doc.name);
+    assert.match(fields[0].description, /terms and Incoterm/);
+    assert.match(fields[0].description, /Unsaved changes are not used/);
+    callback({ source_contract: "CHOSEN/CONTRACT & EXW" });
+    assert.deepEqual(ui.opened, [["/api/method/pz_sales_contract.printing.print_blank_template?source_contract=CHOSEN%2FCONTRACT%20%26%20EXW", "_blank", "noopener,noreferrer"]]);
     assert.equal(JSON.stringify(ui.frm.doc), before);
     assert.equal(ui.requests.length, calls);
   }

@@ -2,6 +2,16 @@
 
 A dedicated Frappe app for ERPNext v16. App users choose ERP Customers, Addresses, Contacts, Items, per-line Bitumen Grade masters, UOMs and Incoterms; app managers submit contracts and create a linked Draft Sales Order for users to complete and submit separately. New contracts use the discounted item amount only; delivery date and applicable taxes are entered on the Sales Order. Existing contracts retain their saved date/tax data and legacy print behavior.
 
+## Product descriptions and blank templates
+
+Expand a product row to edit its **Description** next to Item name. Each row keeps its saved description, including when an Item changes; existing drafts and historical descriptions are preserved. Populated printing includes that wording as escaped multiline text.
+
+Use **Print Blank Template** in the contract form toolbar, then choose a saved contract and **Preview Blank Template**. A saved form is preselected; a new form lets you choose an existing source without saving. The preview copies the source's seller details, seller signatory/position, existing private company stamp and exact printed clauses, together with its saved Incoterm. Choose a source whose terms and Incoterm match the intended template. Review copied custom terms for transaction-specific wording before printing; terms are reproduced verbatim, not redrafted or automatically scrubbed. Unsaved form edits are not used.
+
+Buyer, products, quantities, prices, dates, contract reference, named place and bank/payment-instruction fields are empty for manual completion. The source's payment split and readiness wording remain part of its copied terms. Printing does not create, save or submit a contract, order, payment or stock record. Source document Read/Print permissions and native draft/cancelled printing settings still apply. If the site's optional private stamp asset is missing, the template leaves stamp space blank. Ordinary populated printing is unchanged.
+
+These controls require the updated app code and synchronized DocType metadata on the site. Merging the code does not deploy it.
+
 ## Manual print DRAFT marker
 
 The contract form includes a **Print as Draft** checkbox. It defaults unchecked for new contracts and migrated records; only an operator's saved checkbox value controls the print mark. When checked, each contract page and PDF running header show exactly **DRAFT**. The mark is independent of Customer history, Payment Entries, Sales Order status, contract save or submission. No advance receipt is checked to decide whether a contract can be saved, submitted or printed. A cancelled contract keeps its CANCELLED marking.
