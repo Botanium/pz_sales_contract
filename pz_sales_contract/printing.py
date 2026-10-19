@@ -1,4 +1,5 @@
 import base64
+from html import unescape
 from pathlib import Path
 
 import frappe
@@ -74,6 +75,14 @@ def _load_print_stamp(private_files_path):
     return 'data:image/png;base64,' + base64.b64encode(stamp_path.read_bytes()).decode()
 
 
+def format_product_description(value):
+    """Display native HTML-like snapshots as text, preserving standalone entities."""
+    text = str(value or '')
+    if any(marker in text for marker in ('<', '>', '&lt;', '&gt;')):
+        return unescape(text)
+    return text
+
+
 def get_contract_print_context(doc):
     """Build every print value from a saved, permission-checked contract."""
     if doc.get('doctype') != 'PZ Sales Contract' or not doc.get('name'):
@@ -129,6 +138,9 @@ def get_contract_print_context(doc):
         advance_label=advance_label, balance_label=balance_label,
         advance_required=advance_amount, balance_required=balance_amount,
         format_money=fmt_money,
+        # Frappe sanitizes HTML-like Small Text values, encoding their entities.
+        # Decode once for display; the template still escapes all markup.
+        format_description=format_product_description,
         clauses=clauses_for_contract(doc),
         logo='data:image/png;base64,'+base64.b64encode((path/'public/petrol_zone_logo.png').read_bytes()).decode(),
         stamp=_load_print_stamp(frappe.get_site_path('private', 'files')))

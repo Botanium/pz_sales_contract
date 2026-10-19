@@ -189,6 +189,33 @@ class TestPZSalesContract(IntegrationTestCase):
                 self.assertIsNone(printed.find('b'))
                 self.assertIn('white-space:pre-wrap', html)
 
+    def test_product_description_print_decodes_entities_then_escapes_markup(self):
+        from bs4 import BeautifulSoup
+        doc = contract()
+        # This is the native sanitizer's stored form for HTML-like Small Text.
+        description = 'Size &lt; 10 &amp; &gt; 2\n&lt;script&gt;alert(1)&lt;/script&gt;'
+        doc.items[0].db_set('description', description)
+        for version in ('v6', 'v1'):
+            doc.db_set('terms_version', version)
+            html = frappe.get_print(doc.doctype, doc.name)
+            printed = BeautifulSoup(html, 'html.parser').select_one('.product-description')
+            self.assertEqual(printed.get_text(), 'Size < 10 & > 2\n<script>alert(1)</script>')
+            self.assertIsNone(printed.find('script'))
+        self.assertEqual(doc.items[0].reload().description, description)
+
+    def test_native_description_save_prints_inequalities_and_preserves_entity_literals(self):
+        from bs4 import BeautifulSoup
+        for text in ('Size < 10 & > 2', '<b>Plain product</b>\nA & B', 'Literal &amp; code'):
+            doc = contract(insert=False)
+            doc.items[0].description = text
+            doc.insert().reload()
+            printed = BeautifulSoup(frappe.get_print(doc.doctype, doc.name), 'html.parser').select_one('.product-description')
+            self.assertEqual(printed.get_text(), text)
+            self.assertIsNone(printed.find('b'))
+            stored = doc.items[0].description
+            frappe.get_print(doc.doctype, doc.name)
+            self.assertEqual(doc.items[0].reload().description, stored)
+
     def test_blank_template_is_static_and_creates_no_records(self):
         from bs4 import BeautifulSoup
         from pz_sales_contract.printing import get_blank_contract_html, print_blank_template
