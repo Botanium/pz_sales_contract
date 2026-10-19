@@ -857,3 +857,41 @@ test("blank printing selects a saved legal context without saving or serializing
     assert.equal(ui.requests.length, calls);
   }
 });
+
+test("Word download opens only a saved contract and never saves or serializes form data", async () => {
+  const fresh = desk();
+  await fresh.refresh();
+  assert.equal(fresh.buttons["Download Word (.docx)"], undefined);
+  for (const status of [0, 1, 2]) {
+    const ui = desk(newDoc("SC/1 & word", { __islocal: 0, docstatus: status, customer_name: "PRIVATE BUYER" }));
+    await ui.refresh();
+    const before = JSON.stringify(ui.frm.doc);
+    const calls = ui.requests.length;
+    ui.buttons["Download Word (.docx)"]();
+    assert.deepEqual(ui.opened, [["/api/method/pz_sales_contract.word_export.download_word?name=SC%2F1%20%26%20word", "_blank", "noopener,noreferrer"]]);
+    assert.equal(JSON.stringify(ui.frm.doc), before);
+    assert.equal(ui.requests.length, calls);
+    ui.frm.is_dirty = () => true;
+    assert.throws(() => ui.buttons["Download Word (.docx)"](), /Save your changes/);
+    assert.equal(ui.opened.length, 1);
+  }
+});
+
+test("blank Word downloads use the same saved-source chooser on new, draft and submitted forms", async () => {
+  for (const extra of [{}, { __islocal: 0, docstatus: 0 }, { __islocal: 0, docstatus: 1 }]) {
+    const ui = desk(newDoc("UNSAVED PRIVATE CONTRACT", { ...extra, customer_name: "PRIVATE BUYER" }));
+    await ui.refresh();
+    const before = JSON.stringify(ui.frm.doc);
+    const calls = ui.requests.length;
+    ui.buttons["Download Blank Word (.docx)"]();
+    const [fields, callback, title, label] = ui.prompts[0];
+    assert.equal(title, "Download Blank Word (.docx)");
+    assert.equal(label, "Download Word (.docx)");
+    assert.equal(fields[0].default, ui.frm.is_new() ? undefined : ui.frm.doc.name);
+    assert.equal(fields[0].options, "PZ Sales Contract");
+    callback({ source_contract: "SAVED/SOURCE & EXW" });
+    assert.deepEqual(ui.opened, [["/api/method/pz_sales_contract.word_export.download_blank_word?source_contract=SAVED%2FSOURCE%20%26%20EXW", "_blank", "noopener,noreferrer"]]);
+    assert.equal(JSON.stringify(ui.frm.doc), before);
+    assert.equal(ui.requests.length, calls);
+  }
+});

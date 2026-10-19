@@ -6,6 +6,20 @@ const partyFields = ["seller_name", "seller_address_display", "seller_email", "s
   "buyer_position"];
 const sellerTextDefaults = { seller_name: "Petrol Zone Company", seller_address_display: "Arbat-Sulaimani, Iraq",
   seller_email: "info@petrol-zone.com", seller_phone: "00964 770 000 3737" };
+
+function openBlankContractPicker(frm, word = false) {
+  frappe.prompt([{
+    fieldname: "source_contract", fieldtype: "Link", options: "PZ Sales Contract",
+    label: __("Saved contract for seller details, terms and Incoterm"), reqd: 1,
+    default: frm.is_new() ? undefined : frm.doc.name,
+    description: __("Choose a saved contract with the terms and Incoterm you want. Copies its saved seller details, stamp and terms verbatim; review any transaction-specific wording before printing. Buyer, product, price and bank fields stay blank. Unsaved changes are not used."),
+  }], ({ source_contract }) => {
+    const method = word ? "word_export.download_blank_word" : "printing.print_blank_template";
+    window.open(`/api/method/pz_sales_contract.${method}?source_contract=${encodeURIComponent(source_contract)}`, "_blank", "noopener,noreferrer");
+  }, word ? __("Download Blank Word (.docx)") : __("Print Blank Template"),
+  word ? __("Download Word (.docx)") : __("Preview Blank Template"));
+}
+
 function usesDirectParties(frm) {
   return frm.doc.party_entry_version === "direct-v1" || (frm.is_new() && !frm.doc.amended_from);
 }
@@ -724,16 +738,14 @@ frappe.ui.form.on("PZ Sales Contract", {
     // wait for unrelated AJAX after this check and reopen the save race.
   },
   refresh(frm) {
-    frm.add_custom_button(__("Print Blank Template"), () => {
-      frappe.prompt([{
-        fieldname: "source_contract", fieldtype: "Link", options: "PZ Sales Contract",
-        label: __("Saved contract for seller details, terms and Incoterm"), reqd: 1,
-        default: frm.is_new() ? undefined : frm.doc.name,
-        description: __("Choose a saved contract with the terms and Incoterm you want. Copies its saved seller details, stamp and terms verbatim; review any transaction-specific wording before printing. Buyer, product, price and bank fields stay blank. Unsaved changes are not used."),
-      }], ({ source_contract }) => {
-        window.open(`/api/method/pz_sales_contract.printing.print_blank_template?source_contract=${encodeURIComponent(source_contract)}`, "_blank", "noopener,noreferrer");
-      }, __("Print Blank Template"), __("Preview Blank Template"));
-    });
+    frm.add_custom_button(__("Print Blank Template"), () => openBlankContractPicker(frm));
+    frm.add_custom_button(__("Download Blank Word (.docx)"), () => openBlankContractPicker(frm, true));
+    if (!frm.is_new()) {
+      frm.add_custom_button(__("Download Word (.docx)"), () => {
+        if (frm.is_dirty?.()) frappe.throw(__("Save your changes before downloading Word."));
+        window.open(`/api/method/pz_sales_contract.word_export.download_word?name=${encodeURIComponent(frm.doc.name)}`, "_blank", "noopener,noreferrer");
+      });
+    }
     ensureCompanyDefaultsDocument(frm);
     if (hasFixedHistoricalSplit(frm)
       || frm.doc.advance_percentage === undefined || frm.doc.advance_percentage === null || frm.doc.advance_percentage === "") {
