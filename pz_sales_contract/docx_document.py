@@ -49,7 +49,12 @@ def contract_docx(html, *, blank=False):
     # Select only printable pages, excluding HTML toolbar and PDF-only wrappers.
     for index, page in enumerate(soup.select('section.page')):
         if index:
-            document.add_page_break()
+            # A break run in its own paragraph can overflow a full preceding
+            # page and create an empty page. Break before this tiny paragraph.
+            paragraph = document.add_paragraph()
+            paragraph.paragraph_format.page_break_before = True
+            paragraph.paragraph_format.line_spacing = Pt(1)
+            paragraph.paragraph_format.space_after = Pt(0)
         for child in page.children:
             _block(child, document, Mm(182))
     output = BytesIO()
