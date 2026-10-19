@@ -1,4 +1,5 @@
 import base64
+from html import unescape
 from pathlib import Path
 
 import frappe
@@ -74,6 +75,14 @@ def _load_print_stamp(private_files_path):
     return 'data:image/png;base64,' + base64.b64encode(stamp_path.read_bytes()).decode()
 
 
+def format_product_description(value):
+    """Display native HTML-like snapshots as text, preserving standalone entities."""
+    text = str(value or '')
+    if any(marker in text for marker in ('<', '>', '&lt;', '&gt;')):
+        return unescape(text)
+    return text
+
+
 def get_contract_print_context(doc):
     """Build every print value from a saved, permission-checked contract."""
     if doc.get('doctype') != 'PZ Sales Contract' or not doc.get('name'):
@@ -129,6 +138,9 @@ def get_contract_print_context(doc):
         advance_label=advance_label, balance_label=balance_label,
         advance_required=advance_amount, balance_required=balance_amount,
         format_money=fmt_money,
+        # Frappe sanitizes HTML-like Small Text values, encoding their entities.
+        # Decode once for display; the template still escapes all markup.
+        format_description=format_product_description,
         clauses=clauses_for_contract(doc),
         logo='data:image/png;base64,'+base64.b64encode((path/'public/petrol_zone_logo.png').read_bytes()).decode(),
         stamp=_load_print_stamp(frappe.get_site_path('private', 'files')))
@@ -142,3 +154,22 @@ def pdf_header_html(soup, head, content, styles, html_id, css):
     # Frappe's generic wrapper adds body/print margins that clip a compact running
     # header. Use a minimal wrapper for our own identified header/footer only.
     return '<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;padding:0;font-family:Arial,sans-serif;font-size:8pt;color:#555}.pz-running,.pz-footer{border-bottom:1px solid #efa90a;padding:3px 0}strong{color:#815200}</style></head><body>'+str(content)+'</body></html>'
+
+
+def get_blank_contract_html():
+    """Render a static worksheet, with no contract, defaults, terms or stamp lookup."""
+    if frappe.session.user == 'Guest' or not all(
+        frappe.has_permission('PZ Sales Contract', ptype=action) for action in ('read', 'print')
+    ):
+        frappe.throw('Not permitted to print PZ Sales Contract templates', frappe.PermissionError)
+    logo_path = Path(frappe.get_app_path('pz_sales_contract', 'public', 'petrol_zone_logo.png'))
+    logo = 'data:image/png;base64,' + base64.b64encode(logo_path.read_bytes()).decode()
+    return frappe.render_template('pz_sales_contract/templates/blank_contract.html', {'logo': logo})
+
+
+@frappe.whitelist()
+def print_blank_template():
+    """Open a printable HTML worksheet without creating or selecting a document."""
+    html = get_blank_contract_html()
+    frappe.local.response.update(type='download', filename='petrol-zone-blank-contract.html',
+        filecontent=html, content_type='text/html; charset=utf-8', display_content_as='inline')

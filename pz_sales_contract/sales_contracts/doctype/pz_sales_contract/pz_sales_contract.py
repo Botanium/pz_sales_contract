@@ -446,7 +446,9 @@ class PZSalesContract(Document):
             factor = 1 if item.uom == master.stock_uom else next((r.conversion_factor for r in master.uoms if r.uom == item.uom), None)
             if not factor or factor <= 0:
                 frappe.throw(f'No ERP UOM conversion exists for {item.item_code}: {item.uom}')
-            item.item_name, item.description, item.conversion_factor = master.item_name, master.description, factor
+            item.item_name, item.conversion_factor = master.item_name, factor
+            # Description is contract wording, not a live Item-master value.
+            # Keep existing snapshots, manual edits and deliberately blank text.
         for row in self.specifications:
             if row.item_code not in {r.item_code for r in self.items}:
                 frappe.throw('Specifications must refer to a product in this contract')

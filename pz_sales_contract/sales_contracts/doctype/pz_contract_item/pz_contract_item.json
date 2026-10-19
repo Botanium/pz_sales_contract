@@ -35,9 +35,11 @@
     },
     {
       "fieldname": "description",
-      "label": "ERP description",
+      "label": "Description",
       "fieldtype": "Small Text",
-      "read_only": 1
+      "read_only": 0,
+      "in_list_view": 1,
+      "description": "Product description for this contract line. Enter plain text; line breaks are printed. Retained when changing the Item \u2014 review it for the selected product."
     },
     {
       "fieldname": "grade_master",

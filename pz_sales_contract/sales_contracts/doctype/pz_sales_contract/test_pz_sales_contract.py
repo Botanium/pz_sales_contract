@@ -135,6 +135,136 @@ class TestPZSalesContract(IntegrationTestCase):
     def synthetic_alternate_bank_account(self, currency='USD'):
         return self.synthetic_company_account(f'PZ Synthetic Alternate Bank {currency}', 'Bank', currency)
 
+    def test_product_descriptions_are_editable_per_line_and_survive_save_and_master_changes(self):
+        field = frappe.get_meta('PZ Contract Item').get_field('description')
+        self.assertEqual(field.label, 'Description')
+        self.assertFalse(field.read_only)
+        doc = contract(insert=False)
+        doc.items[0].description = 'First product description\nSecond line & details'
+        second = doc.items[0].as_dict()
+        second.update(name=None, idx=2, description='Independent second product', qty=2)
+        doc.append('items', second)
+        doc.insert().reload()
+        self.assertEqual([row.description for row in doc.items],
+            ['First product description\nSecond line & details', 'Independent second product'])
+        master = frappe.get_doc('Item', doc.items[0].item_code)
+        master.description = 'CHANGED MASTER DESCRIPTION'
+        master.save()
+        doc.save().reload()
+        self.assertEqual(doc.items[0].description, 'First product description\nSecond line & details')
+        doc.items[0].description = ''
+        doc.save().reload()
+        self.assertFalse(doc.items[0].description)
+        self.assertEqual(doc.items[1].description, 'Independent second product')
+        # A pre-upgrade saved draft needs no data patch and retains its snapshot.
+        doc.items[0].db_set('description', 'Historical saved ERP description')
+        doc.reload().save().reload()
+        self.assertEqual(doc.items[0].description, 'Historical saved ERP description')
+        doc.submit()
+        doc.items[0].description = 'Cannot rewrite signed product wording'
+        with self.assertRaises(frappe.ValidationError):
+            doc.save()
+        doc.reload().cancel()
+        amendment = frappe.copy_doc(doc)
+        amendment.docstatus = 0
+        amendment.amended_from = doc.name
+        amendment.insert().reload()
+        self.assertEqual(amendment.items[0].description, 'Historical saved ERP description')
+        self.assertEqual(amendment.items[1].description, 'Independent second product')
+
+    def test_product_description_printing_escapes_stored_markup_in_both_layouts(self):
+        from bs4 import BeautifulSoup
+        from pz_sales_contract.printing import pdf_body_html
+        doc = contract()
+        description = '<script>alert("product")</script>\nA & B <b>plain text</b>'
+        doc.items[0].db_set('description', description)
+        for version in ('v6', 'v1'):
+            doc.db_set('terms_version', version)
+            for html in (frappe.get_print(doc.doctype, doc.name),
+                    pdf_body_html(None, {'doc': doc})):
+                soup = BeautifulSoup(html, 'html.parser')
+                printed = soup.select_one('.product-description')
+                self.assertEqual(printed.get_text(), description)
+                self.assertIsNone(printed.find('script'))
+                self.assertIsNone(printed.find('b'))
+                self.assertIn('white-space:pre-wrap', html)
+
+    def test_product_description_print_decodes_entities_then_escapes_markup(self):
+        from bs4 import BeautifulSoup
+        doc = contract()
+        # This is the native sanitizer's stored form for HTML-like Small Text.
+        description = 'Size &lt; 10 &amp; &gt; 2\n&lt;script&gt;alert(1)&lt;/script&gt;'
+        doc.items[0].db_set('description', description)
+        for version in ('v6', 'v1'):
+            doc.db_set('terms_version', version)
+            html = frappe.get_print(doc.doctype, doc.name)
+            printed = BeautifulSoup(html, 'html.parser').select_one('.product-description')
+            self.assertEqual(printed.get_text(), 'Size < 10 & > 2\n<script>alert(1)</script>')
+            self.assertIsNone(printed.find('script'))
+        self.assertEqual(doc.items[0].reload().description, description)
+
+    def test_native_description_save_prints_inequalities_and_preserves_entity_literals(self):
+        from bs4 import BeautifulSoup
+        for text in ('Size < 10 & > 2', '<b>Plain product</b>\nA & B', 'Literal &amp; code'):
+            doc = contract(insert=False)
+            doc.items[0].description = text
+            doc.insert().reload()
+            printed = BeautifulSoup(frappe.get_print(doc.doctype, doc.name), 'html.parser').select_one('.product-description')
+            self.assertEqual(printed.get_text(), text)
+            self.assertIsNone(printed.find('b'))
+            stored = doc.items[0].description
+            frappe.get_print(doc.doctype, doc.name)
+            self.assertEqual(doc.items[0].reload().description, stored)
+
+    def test_blank_template_is_static_and_creates_no_records(self):
+        from bs4 import BeautifulSoup
+        from pz_sales_contract.printing import get_blank_contract_html, print_blank_template
+        doc = contract()
+        doctypes = ['PZ Sales Contract', 'Sales Order', 'Payment Entry', 'GL Entry', 'Stock Ledger Entry']
+        before = {dt: frappe.db.count(dt) for dt in doctypes}
+        # Fail closed if future code begins reading current records or defaults.
+        with patch('frappe.has_permission', return_value=True), \
+                patch('frappe.get_doc', side_effect=AssertionError('Blank template must not load records')), \
+                patch('frappe.get_single', side_effect=AssertionError('Blank template must not load defaults')), \
+                patch('pz_sales_contract.printing._load_print_stamp', side_effect=AssertionError('No private stamp')):
+            html = get_blank_contract_html()
+            print_blank_template()
+        soup = BeautifulSoup(html, 'html.parser')
+        self.assertEqual(len(soup.select('.page')), 2)
+        self.assertEqual(len(soup.select('.products tbody tr')), 3)
+        self.assertTrue(all(not td.get_text().strip() for td in soup.select('.products tbody td')))
+        self.assertTrue(soup.select_one('.masthead img')['src'].startswith('data:image/png;base64,'))
+        for value in (doc.name, doc.customer_name, doc.customer, doc.items[0].item_code,
+                doc.account_iban, doc.bank_receiving_account, 'EXW', 'FOB', 'CIF',
+                '24 business hours', 'Seller shall arrange and pay', '30%', '70%'):
+            self.assertNotIn(value, html)
+        self.assertEqual({dt: frappe.db.count(dt) for dt in doctypes}, before)
+        from frappe.utils.response import build_response
+        response = build_response()
+        self.assertEqual(response.mimetype, 'text/html')
+        self.assertTrue(response.headers['Content-Disposition'].startswith('inline;'))
+        self.assertEqual(response.get_data(as_text=True), html)
+        # Restore the test request's response after testing the actual endpoint.
+        frappe.local.response = frappe._dict(type='json')
+
+    def test_blank_template_requires_native_read_and_print_permissions(self):
+        from pz_sales_contract.printing import get_blank_contract_html
+        for user in ('Guest', 'pz-finance@example.invalid'):
+            frappe.set_user(user)
+            with self.assertRaises(frappe.PermissionError):
+                get_blank_contract_html()
+        frappe.set_user('Administrator')
+        with patch('frappe.has_permission', side_effect=lambda dt, ptype: ptype != 'print'):
+            with self.assertRaises(frappe.PermissionError):
+                get_blank_contract_html()
+        # The app's contract user has native read/print access, without submit.
+        user = 'description-printer@example.invalid'
+        frappe.get_doc(dict(doctype='User', email=user, first_name='Synthetic printer',
+            send_welcome_email=0, roles=[dict(role='PZ Sales Contract User')])).insert()
+        frappe.set_user(user)
+        self.assertIn('BLANK TEMPLATE', get_blank_contract_html())
+        frappe.set_user('Administrator')
+
     def test_native_arithmetic_and_master_links(self):
         tax_account=frappe.db.get_value('Account',dict(company=COMPANY,is_group=0,root_type='Income'),'name')
         d=contract(discount_amount=100)
