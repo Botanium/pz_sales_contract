@@ -724,6 +724,9 @@ frappe.ui.form.on("PZ Sales Contract", {
     // wait for unrelated AJAX after this check and reopen the save race.
   },
   refresh(frm) {
+    frm.add_custom_button(__("Print Blank Template"), () => {
+      window.open("/api/method/pz_sales_contract.printing.print_blank_template", "_blank", "noopener,noreferrer");
+    });
     ensureCompanyDefaultsDocument(frm);
     if (hasFixedHistoricalSplit(frm)
       || frm.doc.advance_percentage === undefined || frm.doc.advance_percentage === null || frm.doc.advance_percentage === "") {
@@ -876,7 +879,7 @@ frappe.ui.form.on("PZ Contract Item", {
     state.itemCode = itemCode || null;
     if (previousItem !== itemCode) frappe.model.set_value(cdt, cdn, "packaging", null);
     if (!itemCode) {
-      frappe.model.set_value(cdt, cdn, { item_name: null, description: null, uom: null });
+      frappe.model.set_value(cdt, cdn, { item_name: null, uom: null });
       renderDailyChecklist(frm);
       return;
     }
@@ -886,7 +889,7 @@ frappe.ui.form.on("PZ Contract Item", {
       const r = response.message;
       if (!isCurrentContractItemRow(frm, cdt, cdn, row)
         || !current() || !r) return;
-      const values = { item_name: r.item_name, description: r.description, uom: r.stock_uom };
+      const values = { item_name: r.item_name, uom: r.stock_uom };
       if (fillPackaging && row.packaging === packagingBeforeLookup && r.packaging) values.packaging = r.packaging;
       // Separate writes keep a navigation/item-change event from applying the
       // rest of an obsolete response to a reused child-row name.

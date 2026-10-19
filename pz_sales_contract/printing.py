@@ -142,3 +142,22 @@ def pdf_header_html(soup, head, content, styles, html_id, css):
     # Frappe's generic wrapper adds body/print margins that clip a compact running
     # header. Use a minimal wrapper for our own identified header/footer only.
     return '<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;padding:0;font-family:Arial,sans-serif;font-size:8pt;color:#555}.pz-running,.pz-footer{border-bottom:1px solid #efa90a;padding:3px 0}strong{color:#815200}</style></head><body>'+str(content)+'</body></html>'
+
+
+def get_blank_contract_html():
+    """Render a static worksheet, with no contract, defaults, terms or stamp lookup."""
+    if frappe.session.user == 'Guest' or not all(
+        frappe.has_permission('PZ Sales Contract', ptype=action) for action in ('read', 'print')
+    ):
+        frappe.throw('Not permitted to print PZ Sales Contract templates', frappe.PermissionError)
+    logo_path = Path(frappe.get_app_path('pz_sales_contract', 'public', 'petrol_zone_logo.png'))
+    logo = 'data:image/png;base64,' + base64.b64encode(logo_path.read_bytes()).decode()
+    return frappe.render_template('pz_sales_contract/templates/blank_contract.html', {'logo': logo})
+
+
+@frappe.whitelist()
+def print_blank_template():
+    """Open a printable HTML worksheet without creating or selecting a document."""
+    html = get_blank_contract_html()
+    frappe.local.response.update(type='download', filename='petrol-zone-blank-contract.html',
+        filecontent=html, content_type='text/html; charset=utf-8', display_content_as='inline')

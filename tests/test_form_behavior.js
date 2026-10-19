@@ -19,6 +19,7 @@ const newDoc = (name, extra = {}) => ({
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 function desk(doc = newDoc("new-1")) {
+  const buttons = {}, opened = [];
   const handlers = {}, requests = [], lookups = [], alerts = [], queries = {}, fieldProperties = {};
   const locals = { "PZ Contract Item": {} };
   const frappe = {
@@ -34,12 +35,12 @@ function desk(doc = newDoc("new-1")) {
     show_alert: (alert) => alerts.push(alert), user: { has_role: () => false },
     throw: (message) => { throw new Error(message); },
   };
-  vm.runInNewContext(script, { frappe, __: (value) => value, Promise, Set, WeakMap, locals });
+  vm.runInNewContext(script, { frappe, __: (value) => value, Promise, Set, WeakMap, locals, window: { open: (...args) => opened.push(args) } });
   const frm = {
     doc, fields_dict: {}, is_new() { return Boolean(this.doc.__islocal); },
     get_field() { return null; }, refresh_field() {},
     set_df_property(fieldname, property, value) { fieldProperties[`${fieldname}.${property}`] = value; },
-    set_query(fieldname, ...args) { queries[fieldname] = args.at(-1); }, set_intro() {}, add_custom_button() {},
+    set_query(fieldname, ...args) { queries[fieldname] = args.at(-1); }, set_intro() {}, add_custom_button(label, action) { buttons[label] = action; },
     async set_value(key, value) {
       const values = typeof key === "string" ? { [key]: value } : key;
       for (const [fieldname, next] of Object.entries(values)) {
@@ -52,7 +53,7 @@ function desk(doc = newDoc("new-1")) {
   };
   const events = handlers["PZ Sales Contract"];
   events.setup(frm);
-  return { frm, events, childEvents: handlers["PZ Contract Item"], requests, lookups, locals, alerts, queries, fieldProperties, frappe,
+  return { frm, events, childEvents: handlers["PZ Contract Item"], requests, lookups, locals, alerts, queries, fieldProperties, frappe, buttons, opened,
     async refresh() { events.refresh(frm); await flush(); },
     async respond(index = requests.length - 1, values = profile) {
       requests[index].callback({ message: values }); await flush();
@@ -810,4 +811,36 @@ test("clearing custom terms requests the original fallback, and amendment previe
   await ui.events.edit_contract_terms(ui.frm);
   assert.equal(calls.at(-1).amended_from, "cancelled-v5");
   assert.equal(calls.at(-1).name, null);
+});
+
+
+test("descriptions survive refresh, Item changes, clears and late lookup replies", async () => {
+  const ui = desk();
+  const row = { doctype: "PZ Contract Item", name: "described-line", item_code: "Item A", description: "Hand written\nProduct wording" };
+  ui.frm.doc.items = [row]; ui.locals[row.doctype][row.name] = row;
+  await ui.refresh();
+  assert.equal(row.description, "Hand written\nProduct wording");
+  ui.childEvents.item_code(ui.frm, row.doctype, row.name);
+  row.description = "Edited while lookup is pending";
+  await ui.respond(ui.requests.length - 1, { item_name: "Item A", description: "Master A", stock_uom: "Kg" });
+  assert.equal(row.description, "Edited while lookup is pending");
+  row.item_code = "Item B";
+  ui.childEvents.item_code(ui.frm, row.doctype, row.name);
+  await ui.respond(ui.requests.length - 1, { item_name: "Item B", description: "Master B", stock_uom: "Kg" });
+  assert.equal(row.description, "Edited while lookup is pending");
+  row.item_code = ""; ui.childEvents.item_code(ui.frm, row.doctype, row.name);
+  assert.equal(row.description, "Edited while lookup is pending");
+});
+
+test("blank printing opens the static endpoint without serializing or saving any form", async () => {
+  for (const extra of [{}, { __islocal: 0, docstatus: 0 }, { __islocal: 0, docstatus: 1 }]) {
+    const ui = desk(newDoc("PRIVATE-CONTRACT", { customer_name: "PRIVATE-BUYER", items: [{ description: "PRIVATE-PRODUCT", rate: 987654 }], ...extra }));
+    await ui.refresh();
+    const before = JSON.stringify(ui.frm.doc);
+    const calls = ui.requests.length;
+    ui.buttons["Print Blank Template"]();
+    assert.deepEqual(ui.opened, [["/api/method/pz_sales_contract.printing.print_blank_template", "_blank", "noopener,noreferrer"]]);
+    assert.equal(JSON.stringify(ui.frm.doc), before);
+    assert.equal(ui.requests.length, calls);
+  }
 });
