@@ -216,53 +216,106 @@ class TestPZSalesContract(IntegrationTestCase):
             frappe.get_print(doc.doctype, doc.name)
             self.assertEqual(doc.items[0].reload().description, stored)
 
-    def test_blank_template_is_static_and_creates_no_records(self):
+    def test_blank_template_copies_only_selected_saved_seller_and_legal_context(self):
         from bs4 import BeautifulSoup
         from pz_sales_contract.printing import get_blank_contract_html, print_blank_template
-        doc = contract()
+        doc = contract(advance_percentage=50, cargo_ready_within_days=12)
+        doc.db_set(dict(seller_signatory='Approved Synthetic Seller', seller_position='Synthetic CEO'))
+        doc.reload()
         doctypes = ['PZ Sales Contract', 'Sales Order', 'Payment Entry', 'GL Entry', 'Stock Ledger Entry']
         before = {dt: frappe.db.count(dt) for dt in doctypes}
-        # Fail closed if future code begins reading current records or defaults.
-        with patch('frappe.has_permission', return_value=True), \
-                patch('frappe.get_doc', side_effect=AssertionError('Blank template must not load records')), \
-                patch('frappe.get_single', side_effect=AssertionError('Blank template must not load defaults')), \
-                patch('pz_sales_contract.printing._load_print_stamp', side_effect=AssertionError('No private stamp')):
-            html = get_blank_contract_html()
-            print_blank_template()
+        saved = doc.as_dict()
+        stamp = 'data:image/png;base64,c3ludGhldGlj'
+        real_render = frappe.render_template
+        with patch('pz_sales_contract.printing._load_print_stamp', return_value=stamp), \
+                patch('frappe.render_template', wraps=real_render) as render:
+            html = get_blank_contract_html(doc.name)
+            context = render.call_args.args[1]
+            self.assertEqual(set(context), {'logo', 'stamp', 'seller', 'incoterm', 'clauses'})
+            self.assertEqual(set(context['seller']), {'name', 'address', 'email', 'phone', 'signatory', 'position'})
+            print_blank_template(doc.name)
         soup = BeautifulSoup(html, 'html.parser')
-        self.assertEqual(len(soup.select('.page')), 2)
+        self.assertEqual(len(soup.select('.page')), 6)  # 17 clauses, five per page
         self.assertEqual(len(soup.select('.products tbody tr')), 3)
         self.assertTrue(all(not td.get_text().strip() for td in soup.select('.products tbody td')))
-        self.assertTrue(soup.select_one('.masthead img')['src'].startswith('data:image/png;base64,'))
+        self.assertEqual([p.get_text() for p in soup.select('.terms p') if 'Contract reference:' not in p.get_text()], clauses_for_contract(doc))
+        self.assertEqual(soup.select_one('.seller-stamp')['src'], stamp)
+        for value in (doc.seller_name, 'Approved Synthetic Seller', 'Synthetic CEO', doc.incoterm,
+                '50%', '12'):
+            self.assertIn(value, soup.get_text())
         for value in (doc.name, doc.customer_name, doc.customer, doc.items[0].item_code,
-                doc.account_iban, doc.bank_receiving_account, 'EXW', 'FOB', 'CIF',
-                '24 business hours', 'Seller shall arrange and pay', '30%', '70%'):
-            self.assertNotIn(value, html)
+                doc.items[0].description, doc.account_iban, doc.bank_receiving_account, doc.named_place,
+                doc.in_words, str(doc.grand_total), doc.currency):
+            if value:
+                self.assertNotIn(value, html)
         self.assertEqual({dt: frappe.db.count(dt) for dt in doctypes}, before)
+        self.assertEqual(doc.reload().as_dict(), saved)
         from frappe.utils.response import build_response
         response = build_response()
         self.assertEqual(response.mimetype, 'text/html')
         self.assertTrue(response.headers['Content-Disposition'].startswith('inline;'))
         self.assertEqual(response.get_data(as_text=True), html)
-        # Restore the test request's response after testing the actual endpoint.
         frappe.local.response = frappe._dict(type='json')
 
-    def test_blank_template_requires_native_read_and_print_permissions(self):
+    def test_blank_template_retains_historical_or_custom_wording_and_escapes_it(self):
+        from bs4 import BeautifulSoup
         from pz_sales_contract.printing import get_blank_contract_html
+        doc = contract()
+        for version in ('v1', 'v4', 'v5', 'v6'):
+            doc.db_set(dict(terms_version=version, terms_snapshot=None))
+            html = get_blank_contract_html(doc.name)
+            soup = BeautifulSoup(html, 'html.parser')
+            self.assertEqual([p.get_text() for p in soup.select('.terms p')
+                if 'Contract reference:' not in p.get_text()], clauses_for_contract(doc))
+        doc.db_set(dict(contract_terms_text='Agreed <script>alert(1)</script> & terms\nSecond line',
+            seller_signatory='<b>Seller</b>', seller_position='CEO & Director'))
+        # In-memory edits cannot change a template based on the saved source.
+        doc.contract_terms_text = 'UNSAVED PRIVATE TERMS'
+        doc.seller_signatory = 'UNSAVED SIGNER'
+        with patch('pz_sales_contract.printing._load_print_stamp', return_value=None):
+            html = get_blank_contract_html(doc.name)
+        soup = BeautifulSoup(html, 'html.parser')
+        self.assertIn('Agreed <script>alert(1)</script> & terms\nSecond line', soup.get_text())
+        self.assertIn('<b>Seller</b>', soup.get_text())
+        self.assertIn('CEO & Director', soup.get_text())
+        self.assertNotIn('UNSAVED', html)
+        self.assertFalse(soup.find('script'))
+        self.assertFalse(soup.find('b'))
+        self.assertFalse(soup.select('.seller-stamp'))
+
+    def test_blank_template_requires_a_saved_source_and_native_print_permissions(self):
+        from pz_sales_contract.printing import get_blank_contract_html
+        doc = contract()
+        for value in (None, '', {'name': doc.name}):
+            with self.assertRaises(frappe.ValidationError):
+                get_blank_contract_html(value)
+        with self.assertRaises(frappe.DoesNotExistError):
+            get_blank_contract_html('missing-synthetic-contract')
         for user in ('Guest', 'pz-finance@example.invalid'):
             frappe.set_user(user)
             with self.assertRaises(frappe.PermissionError):
-                get_blank_contract_html()
+                get_blank_contract_html(doc.name)
         frappe.set_user('Administrator')
-        with patch('frappe.has_permission', side_effect=lambda dt, ptype: ptype != 'print'):
-            with self.assertRaises(frappe.PermissionError):
-                get_blank_contract_html()
-        # The app's contract user has native read/print access, without submit.
+        for action in ('read', 'print'):
+            with patch.object(type(doc), 'check_permission', side_effect=lambda ptype: (
+                    frappe.throw('Synthetic denied', frappe.PermissionError) if ptype == action else None)):
+                with self.assertRaises(frappe.PermissionError):
+                    get_blank_contract_html(doc.name)
+        frappe.db.set_single_value('Print Settings', 'allow_print_for_draft', 0)
+        with self.assertRaises(frappe.PermissionError):
+            get_blank_contract_html(doc.name)
+        frappe.db.set_single_value('Print Settings', 'allow_print_for_draft', 1)
+        doc.db_set('docstatus', 2)
+        frappe.db.set_single_value('Print Settings', 'allow_print_for_cancelled', 0)
+        with self.assertRaises(frappe.PermissionError):
+            get_blank_contract_html(doc.name)
+        frappe.db.set_single_value('Print Settings', 'allow_print_for_cancelled', 1)
+        doc.db_set('docstatus', 0)
         user = 'description-printer@example.invalid'
         frappe.get_doc(dict(doctype='User', email=user, first_name='Synthetic printer',
             send_welcome_email=0, roles=[dict(role='PZ Sales Contract User')])).insert()
         frappe.set_user(user)
-        self.assertIn('BLANK TEMPLATE', get_blank_contract_html())
+        self.assertIn('BLANK TEMPLATE', get_blank_contract_html(doc.name))
         frappe.set_user('Administrator')
 
     def test_native_arithmetic_and_master_links(self):

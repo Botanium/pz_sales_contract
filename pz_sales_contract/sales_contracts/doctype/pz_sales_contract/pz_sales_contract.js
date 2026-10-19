@@ -725,7 +725,14 @@ frappe.ui.form.on("PZ Sales Contract", {
   },
   refresh(frm) {
     frm.add_custom_button(__("Print Blank Template"), () => {
-      window.open("/api/method/pz_sales_contract.printing.print_blank_template", "_blank", "noopener,noreferrer");
+      frappe.prompt([{
+        fieldname: "source_contract", fieldtype: "Link", options: "PZ Sales Contract",
+        label: __("Saved contract for seller details, terms and Incoterm"), reqd: 1,
+        default: frm.is_new() ? undefined : frm.doc.name,
+        description: __("Choose a saved contract with the terms and Incoterm you want. Copies its saved seller details, stamp and terms verbatim; review any transaction-specific wording before printing. Buyer, product, price and bank fields stay blank. Unsaved changes are not used."),
+      }], ({ source_contract }) => {
+        window.open(`/api/method/pz_sales_contract.printing.print_blank_template?source_contract=${encodeURIComponent(source_contract)}`, "_blank", "noopener,noreferrer");
+      }, __("Print Blank Template"), __("Preview Blank Template"));
     });
     ensureCompanyDefaultsDocument(frm);
     if (hasFixedHistoricalSplit(frm)

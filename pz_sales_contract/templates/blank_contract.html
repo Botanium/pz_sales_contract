@@ -25,18 +25,21 @@ td { border:1px solid #ccc; padding:7px; vertical-align:top; font-size:9pt; }
 .line { display:inline-block; border-bottom:1px solid #888; min-width:37mm; height:5mm; }
 .ruled { height:9mm; border-bottom:1px solid #aaa; }
 .signatures td { height:44mm; line-height:2.2; }
+.seller-details { white-space:pre-line; overflow-wrap:anywhere; }
+.terms p { white-space:pre-line; overflow-wrap:anywhere; page-break-inside:avoid; }
+.seller-stamp { display:block; width:132px; max-height:84px; margin:10px 0; }
 .toolbar { text-align:center; padding:12px; } button { font:inherit; padding:8px 20px; cursor:pointer; }
 @media print { body { background:white; } .page { width:auto; margin:0; padding:0; } .toolbar { display:none; } th { print-color-adjust:exact; -webkit-print-color-adjust:exact; } }
 </style>
 </head>
 <body>
-<div class="toolbar"><button type="button" onclick="window.print()">Print Blank Template</button></div>
+<div class="toolbar"><p>Incoterm: <strong>{{ incoterm|e }}</strong>. Review the copied terms, including any transaction-specific wording, before printing. Complete the blank commercial fields before signing.</p><button type="button" onclick="window.print()">Print Blank Template</button></div>
 <section class="page">
 <div class="masthead"><img src="{{ logo|e }}" alt="Petrol Zone logo"><div><strong>PETROL ZONE</strong><span>SALES CONTRACT · BLANK TEMPLATE</span></div></div>
 <h1>Petrol Zone Sales Contract</h1>
-<p class="note">Complete all agreed commercial details and terms before signing. No Incoterm, payment split, readiness period or other contractual terms are preselected.</p>
+<p class="note">Complete all blank commercial details before signing. The seller details, Incoterm and Contract Terms below are prefilled.</p>
 <p>Contract reference: <span class="line"></span> &nbsp; Date: <span class="line"></span></p>
-<table class="parties"><tr><td><strong>Seller</strong><br>Legal name: _________________________<br>Address: ___________________________<br>Phone / email: _______________________<br>Representative / title: __________________</td><td><strong>Buyer</strong><br>Legal name: _________________________<br>Address: ___________________________<br>Phone / email: _______________________<br>Representative / title: __________________</td></tr></table>
+<table class="parties"><tr><td><strong>Seller</strong><br><span class="seller-details">{{ seller.name|e }}</span><br>Address: <span class="seller-details">{{ (seller.address or '')|e }}</span><br>Email: {{ (seller.email or '')|e }}<br>Phone: {{ (seller.phone or '')|e }}</td><td><strong>Buyer</strong><br>Legal name: _________________________<br>Address: ___________________________<br>Phone / email: _______________________<br>Representative / title: __________________</td></tr></table>
 <h2>Products and Price</h2>
 <table class="products"><thead><tr><th style="width:40%">Product / Description / Packaging</th><th>Grade</th><th>Qty</th><th>UOM</th><th>Rate</th><th>Amount</th></tr></thead><tbody>
 {% for index in range(3) %}<tr>{% for column in range(6) %}<td></td>{% endfor %}</tr>{% endfor %}
@@ -45,24 +48,31 @@ td { border:1px solid #ccc; padding:7px; vertical-align:top; font-size:9pt; }
 <p>Discount: <span class="line"></span> &nbsp; Contract amount: <span class="line"></span></p>
 <p>Amount in words: ______________________________________________________________</p>
 <h2>Delivery and Payment Agreement</h2>
-<p>Incoterm / version and named place: __________________________________________________</p>
+<p><strong>Incoterm: {{ incoterm|e }}</strong> &nbsp; Named place / version: ___________________________</p>
 <p>Loading / export / transport / insurance responsibilities: ___________________________________</p>
 <div class="ruled"></div>
-<p>Advance: ______ % / amount: ______________ &nbsp; Balance: ______ % / amount: ______________</p>
+<p>Advance amount: ____________________ &nbsp; Balance amount: ____________________</p>
 <p>Payment deadlines / basis: __________________________________________________________</p>
 <p>Cargo readiness days / triggering event: __________________________________________________</p>
 </section>
+{% for start in range(0, clauses|length, 5) %}
+<section class="page terms">
+<div class="masthead"><img src="{{ logo|e }}" alt="Petrol Zone logo"><div><strong>PETROL ZONE</strong><span>SALES CONTRACT · CONTRACT TERMS</span></div></div>
+<p>Contract reference: <span class="line"></span> &nbsp; Date: <span class="line"></span></p>
+<h2>Contract Terms · {{ incoterm|e }}</h2>
+{% for clause in clauses[start:start + 5] %}<p>{{ clause|e }}</p>{% endfor %}
+</section>
+{% endfor %}
 <section class="page">
 <div class="masthead"><img src="{{ logo|e }}" alt="Petrol Zone logo"><div><strong>PETROL ZONE</strong><span>SALES CONTRACT · TERMS AND SIGNATURES</span></div></div>
 <p>Contract reference: <span class="line"></span> &nbsp; Date: <span class="line"></span></p>
-<h2>Agreed Terms &amp; Conditions</h2>
-<p class="note">Enter the agreed wording or identify attached terms, including any delivery, tax, collection, notice, governing law and dispute arrangements.</p>
-{% for index in range(9) %}<div class="ruled"></div>{% endfor %}
+<h2>Additional Agreed Details</h2>
+{% for index in range(4) %}<div class="ruled"></div>{% endfor %}
 <h2>Payment Instructions</h2>
 <p>Beneficiary / bank / account / reference: __________________________________________________</p>
 <div class="ruled"></div><div class="ruled"></div>
 <h2>Signatures</h2>
-<table class="signatures"><tr><td><strong>For Seller</strong><br>Name / title: ________________________<br>Signature / stamp: ____________________<br>Date: ______________________________</td><td><strong>For Buyer</strong><br>Name / title: ________________________<br>Signature / stamp: ____________________<br>Date: ______________________________</td></tr></table>
+<table class="signatures"><tr><td><strong>For Seller</strong><br><span class="seller-details">{{ seller.name|e }}</span><br>Name: {{ (seller.signatory or '')|e }}<br>Position: {{ (seller.position or '')|e }}<br>Signature: __________________________{% if stamp %}<img class="seller-stamp" src="{{ stamp|e }}" alt="Petrol Zone Company stamp">{% else %}<br>Stamp: ____________________________{% endif %}<br>Date: ______________________________</td><td><strong>For Buyer</strong><br>Name / title: ________________________<br>Signature / stamp: ____________________<br>Date: ______________________________</td></tr></table>
 </section>
 </body>
 </html>
