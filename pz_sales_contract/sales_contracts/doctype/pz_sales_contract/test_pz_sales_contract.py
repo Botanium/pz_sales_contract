@@ -318,6 +318,148 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertIn('BLANK TEMPLATE', get_blank_contract_html(doc.name))
         frappe.set_user('Administrator')
 
+    def word_response(self, endpoint, name):
+        from frappe.utils.response import build_response
+        from pz_sales_contract.word_export import DOCX_MIMETYPE
+        endpoint(name)
+        response = build_response()
+        self.assertEqual(response.mimetype, DOCX_MIMETYPE)
+        self.assertTrue(response.headers['Content-Disposition'].startswith('attachment;'))
+        self.assertIn('.docx', response.headers['Content-Disposition'])
+        data = response.get_data()
+        frappe.local.response = frappe._dict(type='json')
+        return data
+
+    def word_paragraphs(self, data):
+        from io import BytesIO
+        from zipfile import ZipFile
+        from lxml import etree
+        with ZipFile(BytesIO(data)) as archive:
+            tree = etree.fromstring(archive.read('word/document.xml'))
+        namespace = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+        return [''.join('\n' if node.tag.endswith('}br') else (node.text or '')
+            for node in paragraph.iter() if node.tag.endswith(('}t', '}br')))
+            for paragraph in tree.xpath('//w:p', namespaces=namespace)]
+
+    def test_word_download_preserves_saved_print_content_and_same_private_stamp(self):
+        import base64
+        from io import BytesIO
+        from zipfile import ZipFile
+        from pz_sales_contract.word_export import download_word
+        from docx import Document
+        doc = contract(insert=False, advance_percentage=50, cargo_ready_within_days=12, print_as_draft=1)
+        description = '<b>Literal product</b>\nSize < 10 & > 2'
+        doc.items[0].description = description
+        second = doc.items[0].as_dict()
+        second.update(name=None, idx=2, description='SECOND PRODUCT\nLiteral &amp; code', qty=2, rate=19)
+        doc.append('items', second)
+        doc.insert().reload()
+        before = doc.as_dict()
+        doctypes = ['PZ Sales Contract', 'Sales Order', 'Payment Entry', 'GL Entry', 'Stock Ledger Entry', 'File']
+        counts = {dt: frappe.db.count(dt) for dt in doctypes}
+        stamp_bytes = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==')
+        stamp = 'data:image/png;base64,' + base64.b64encode(stamp_bytes).decode()
+        doc.seller_signatory = 'UNSAVED PRIVATE SIGNER'
+        doc.items[0].description = 'UNSAVED PRIVATE DESCRIPTION'
+        with patch('pz_sales_contract.printing._load_print_stamp', return_value=stamp) as loader:
+            data = self.word_response(download_word, doc.name)
+            loader.assert_called_once_with(frappe.get_site_path('private', 'files'))
+        paragraphs = self.word_paragraphs(data)
+        text = '\n'.join(paragraphs)
+        for value in (doc.name, doc.customer_name, doc.incoterm, doc.seller_position,
+                description, 'SECOND PRODUCT\nLiteral &amp; code', 'DRAFT'):
+            self.assertIn(value, text)
+        self.assertNotIn('UNSAVED PRIVATE', text)
+        for clause in clauses_for_contract(doc):
+            self.assertIn(clause, paragraphs)
+        with ZipFile(BytesIO(data)) as archive:
+            self.assertIn(stamp_bytes, [archive.read(name) for name in archive.namelist() if name.startswith('word/media/')])
+            self.assertNotIn(b'TargetMode="External"', archive.read('word/_rels/document.xml.rels'))
+            self.assertNotIn(b'altChunk', archive.read('word/document.xml'))
+        word = Document(BytesIO(data))
+        self.assertGreater(len(word.tables), 2)
+        self.assertEqual(doc.reload().as_dict(), before)
+        self.assertEqual({dt: frappe.db.count(dt) for dt in doctypes}, counts)
+
+    def test_blank_word_retains_only_selected_seller_and_legal_context(self):
+        from io import BytesIO
+        from zipfile import ZipFile
+        from docx import Document
+        from pz_sales_contract.word_export import download_blank_word
+        doc = contract(advance_percentage=50, cargo_ready_within_days=12)
+        doc.items[0].db_set('description', 'PRIVATE PRODUCT DESCRIPTION')
+        doc.reload()
+        before = doc.as_dict()
+        data = self.word_response(download_blank_word, doc.name)
+        paragraphs = self.word_paragraphs(data)
+        text = '\n'.join(paragraphs)
+        for value in (doc.seller_name, doc.seller_signatory, doc.seller_position, doc.incoterm):
+            self.assertIn(value, text)
+        for clause in clauses_for_contract(doc):
+            self.assertIn(clause, paragraphs)
+        with ZipFile(BytesIO(data)) as archive:
+            all_xml = '\n'.join(archive.read(name).decode() for name in archive.namelist() if name.endswith('.xml'))
+        for value in (doc.name, doc.customer_name, doc.customer, doc.items[0].item_code,
+                doc.items[0].description, doc.account_iban, doc.bank_receiving_account, doc.named_place, doc.in_words):
+            if value:
+                self.assertNotIn(value, all_xml)
+        word = Document(BytesIO(data))
+        products = next(table for table in word.tables if table.cell(0, 0).text == 'Product / Description / Packaging')
+        self.assertEqual(len(products.rows), 4)
+        self.assertTrue(all(not cell.text.strip() for row in products.rows[1:] for cell in row.cells))
+        self.assertEqual(doc.reload().as_dict(), before)
+
+    def test_word_exports_preserve_historical_custom_terms_and_saved_print_markers(self):
+        from pz_sales_contract.word_export import download_word, download_blank_word
+        doc = contract()
+        for version in ('v1', 'v4', 'v5', 'v6'):
+            doc.db_set(dict(terms_version=version, terms_snapshot=None))
+            for endpoint in (download_word, download_blank_word):
+                paragraphs = self.word_paragraphs(self.word_response(endpoint, doc.name))
+                for clause in clauses_for_contract(doc):
+                    self.assertIn(clause, paragraphs)
+            text = '\n'.join(self.word_paragraphs(self.word_response(download_word, doc.name)))
+            self.assertEqual('Commercial Schedule' in text.split('Contract Terms')[0], version == 'v1')
+        doc.db_set(dict(contract_terms_text='CUSTOM <script>literal</script> & terms\nSecond line', docstatus=2))
+        for endpoint in (download_word, download_blank_word):
+            paragraphs = self.word_paragraphs(self.word_response(endpoint, doc.name))
+            self.assertIn(doc.contract_terms_text, paragraphs)
+            if endpoint is download_word:
+                self.assertIn('CANCELLED CONTRACT', paragraphs)
+            else:
+                self.assertNotIn('CANCELLED CONTRACT', paragraphs)
+
+    def test_word_downloads_enforce_native_document_permissions_and_status(self):
+        from pz_sales_contract.word_export import download_word, download_blank_word
+        doc = contract()
+        for endpoint in (download_word, download_blank_word):
+            for user in ('Guest', 'pz-finance@example.invalid'):
+                frappe.set_user(user)
+                with self.assertRaises(frappe.PermissionError):
+                    endpoint(doc.name)
+            frappe.set_user('Administrator')
+            for action in ('read', 'print'):
+                with patch.object(type(doc), 'check_permission', side_effect=lambda ptype: (
+                        frappe.throw('Synthetic denied', frappe.PermissionError) if ptype == action else None)):
+                    with self.assertRaises(frappe.PermissionError):
+                        endpoint(doc.name)
+            for value in (None, '', {'name': doc.name}):
+                with self.assertRaises(frappe.ValidationError):
+                    endpoint(value)
+            frappe.db.set_single_value('Print Settings', 'allow_print_for_draft', 0)
+            with self.assertRaises(frappe.PermissionError):
+                endpoint(doc.name)
+            frappe.db.set_single_value('Print Settings', 'allow_print_for_draft', 1)
+            doc.db_set('docstatus', 2)
+            frappe.db.set_single_value('Print Settings', 'allow_print_for_cancelled', 0)
+            with self.assertRaises(frappe.PermissionError):
+                endpoint(doc.name)
+            frappe.db.set_single_value('Print Settings', 'allow_print_for_cancelled', 1)
+            doc.db_set('docstatus', 0)
+            frappe.set_user('pz-sales@example.invalid')
+            self.assertTrue(self.word_response(endpoint, doc.name).startswith(b'PK'))
+            frappe.set_user('Administrator')
+
     def test_native_arithmetic_and_master_links(self):
         tax_account=frappe.db.get_value('Account',dict(company=COMPANY,is_group=0,root_type='Income'),'name')
         d=contract(discount_amount=100)
