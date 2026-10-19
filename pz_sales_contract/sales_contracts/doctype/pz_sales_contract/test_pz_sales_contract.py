@@ -142,7 +142,7 @@ class TestPZSalesContract(IntegrationTestCase):
         doc = contract(insert=False)
         doc.items[0].description = 'First product description\nSecond line & details'
         second = doc.items[0].as_dict()
-        second.update(name=None, description='Independent second product', qty=2)
+        second.update(name=None, idx=2, description='Independent second product', qty=2)
         doc.append('items', second)
         doc.insert().reload()
         self.assertEqual([row.description for row in doc.items],
