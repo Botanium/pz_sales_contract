@@ -206,10 +206,12 @@ def _block(node, parent, width):
     elif 'ruled' in classes or 'signature' in classes:
         paragraph = parent.add_paragraph('_' * min(64, max(10, int(width / Mm(2)))))
         paragraph.paragraph_format.space_before = Pt(10)
-    elif node.name in ('p', 'h1', 'h2', 'h3') or any(
+    elif node.name in ('p', 'li', 'h1', 'h2', 'h3') or any(
             name in classes for name in ('draft', 'status', 'product-description')):
         paragraph = (parent.add_heading(level=int(node.name[1]))
             if node.name in ('h1', 'h2', 'h3') else parent.add_paragraph())
+        if node.name == 'li' and node.find_parent('ul'):
+            paragraph.style = 'List Bullet'
         _inline(node, paragraph)
         if 'draft' in classes:
             paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER

@@ -34,6 +34,22 @@ def js_string_array(source, pattern):
 
 
 class TestContractFormDefinition(unittest.TestCase):
+    def test_new_weight_claim_terms_preserve_existing_terms_and_are_prominent(self):
+        active = json.loads(TERMS_JSON.read_text())
+        previous = json.loads((ROOT / 'pz_sales_contract/terms_versions/v6.json').read_text())
+        self.assertEqual(active[:len(previous)], previous)
+        bullets = active[len(previous):]
+        self.assertEqual(len(bullets), 3)
+        self.assertTrue(all(item.startswith('• ') for item in bullets))
+        self.assertIn('2 metric tonnes per 500 metric tonnes', bullets[0])
+        self.assertIn('proportion', bullets[0])
+        self.assertIn('excess', bullets[1])
+        self.assertIn('net shortage', bullets[1])
+        self.assertIn('above', bullets[1])
+        self.assertIn('60 days', bullets[2])
+        self.assertIn('actual departure', bullets[2])
+        self.assertIn('loading port', bullets[2])
+
     @classmethod
     def setUpClass(cls):
         cls.contract = json.loads(CONTRACT_JSON.read_text())
@@ -174,7 +190,7 @@ class TestContractFormDefinition(unittest.TestCase):
         self.assertEqual(v5_terms[2].count("{balance_percentage}"), 1)
         self.assertEqual(v4_terms, frozen_terms)
         self.assertNotEqual(v4_terms, v3_terms)
-        self.assertEqual(len(active_terms), 16)
+        self.assertEqual(len(active_terms), 19)
         self.assertTrue(all(isinstance(clause, str) for clause in active_terms))
         self.assertNotEqual(active_terms, v2_terms)
         self.assertIn("Commercial Schedule", active_terms[0])
@@ -191,8 +207,8 @@ class TestContractFormDefinition(unittest.TestCase):
         self.assertIn("return _snapshot_for_version(version)", new_contract_path)
         self.assertIn("clauses_for_contract(doc)", (ROOT / "pz_sales_contract/printing.py").read_text())
         self.assertIn("simple_print = doc.get('terms_version') in SIMPLE_PRINT_TERMS_VERSIONS", (ROOT / "pz_sales_contract/printing.py").read_text())
-        self.assertEqual(python_constant(CONTRACT_TERMS_PY, "CURRENT_TERMS_VERSION"), "v6")
-        self.assertIn("'v2', 'v3', 'v4', 'v5', CURRENT_TERMS_VERSION", terms_source)
+        self.assertEqual(python_constant(CONTRACT_TERMS_PY, "CURRENT_TERMS_VERSION"), "v7")
+        self.assertIn("'v2', 'v3', 'v4', 'v5', 'v6', CURRENT_TERMS_VERSION", terms_source)
         self.assertIn('frm.set_df_property("specifications", "hidden", simplifiedContract)', self.javascript)
         self.assertIn("Product specification rows are not part of the simplified contract version", self.controller)
     def test_advance_percentage_is_editable_optional_and_has_a_thirty_percent_default(self):
