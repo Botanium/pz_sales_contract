@@ -109,7 +109,7 @@
       "label": "Additional allowed Incoterms",
       "fieldtype": "Table",
       "options": "PZ Contract Incoterm",
-      "description": "EXW, FOB and CIF are always available. Add other existing Incoterm records here for this Company."
+      "description": "Retained for historical settings. Contracts can select any existing ERP Incoterm."
     },
     {
       "fieldname": "delivery_terms",

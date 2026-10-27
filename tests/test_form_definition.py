@@ -309,9 +309,8 @@ class TestContractFormDefinition(unittest.TestCase):
         incoterm = next(field for field in child["fields"] if field["fieldname"] == "incoterm")
         self.assertEqual((incoterm["fieldtype"], incoterm["options"]), ("Link", "Incoterm"))
         self.assertIn('DEFAULT_CONTRACT_INCOTERMS = ("EXW", "FOB", "CIF")', self.default_controller)
-        self.assertIn('get_allowed_contract_incoterms(self.company)', self.controller)
-        self.assertIn('get_allowed_incoterms', self.javascript)
-        self.assertIn('defaultContractIncoterms = ["EXW", "FOB", "CIF"]', self.javascript)
+        self.assertNotIn('get_allowed_contract_incoterms(self.company)', self.controller)
+        self.assertIn('frm.set_query("incoterm", () => ({}))', self.javascript)
 
     def test_removed_sections_are_optional_hidden_and_keep_their_schema(self):
         fields = {field["fieldname"]: field for field in self.contract["fields"]}

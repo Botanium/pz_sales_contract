@@ -18,7 +18,6 @@ from pz_sales_contract.cargo_readiness import normalize_cargo_ready_days
 from pz_sales_contract.payment_split import calculate_payment_split, normalize_advance_percentage
 from pz_sales_contract.sales_contracts.doctype.pz_contract_defaults.pz_contract_defaults import (
     COMPANY_DEFAULT_FIELDS,
-    get_allowed_contract_incoterms,
 )
 
 ITEM_ONLY_DRAFT_SO_SCOPE = 'item-only-draft-so-v1'
@@ -546,14 +545,6 @@ class PZSalesContract(Document):
     def validate_incoterm(self, old=None):
         if old and old.incoterm == self.incoterm:
             return
-        allowed = set(get_allowed_contract_incoterms(self.company))
-        if self.amended_from:
-            original = frappe.get_doc('PZ Sales Contract', self.amended_from)
-            original.check_permission('read')
-            if original.incoterm:
-                allowed.add(original.incoterm)
-        if self.incoterm not in allowed:
-            frappe.throw('Choose EXW, FOB, CIF, or an Incoterm enabled for this seller company')
         incoterm = frappe.get_doc('Incoterm', self.incoterm)
         incoterm.check_permission('read')
 
