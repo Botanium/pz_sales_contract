@@ -28,6 +28,10 @@ Historical receipt matching uses submitted native Payment Entries allocated to t
 
 **Foreign exchange limitation:** historical receipt verification requires the party and receiving accounts to use the order currency and matching paid/received amounts. Cross-currency receipts fail closed. This does not restrict the contract's native ERP exchange-rate accounting.
 
+## Weight discrepancy claims
+
+New contract families include bold bullet points requiring shortage and excess weights to be submitted together, reconciled to a net shortage, and submitted within 60 days after the vessel carrying the goods actually departs the loading port. The weighbridge discrepancy tolerance is 2 metric tonnes per 500 metric tonnes, scaled proportionally; only a net shortage above that tolerance is considered for reimbursement. Existing contract snapshots and amendments retain their saved terms. Blank templates reproduce their selected saved source, including its terms and Incoterm.
+
 ## Commercial inputs
 
 The new contract form omits delivery date, contract tax details and deal-specific legal schedule or approval-record inputs. A new contract total equals discounted goods only; 30% / 70% amounts remain as displayed totals. The linked Sales Order is saved Draft so a user can enter a delivery date and applicable taxes before manually submitting it. New v4 prints include the user-supplied 15-clause term set and omit the Commercial Schedule, specification appendix and approval record. Several v4 clauses refer to values that v4 does not capture; see [the print-copy review](docs/contract-print-copy-review.md). No delivery date, schedule value, tax amount, venue, charge or deadline is inferred. Saving/submitting does not sign or send a contract.

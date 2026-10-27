@@ -16,6 +16,12 @@ NS = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
 
 
 class WordDocumentTests(unittest.TestCase):
+    def test_bold_term_bullets_are_editable_word_list_items(self):
+        data = contract_docx('<section class="page terms"><ul><li><strong>Important term</strong></li></ul></section>')
+        paragraph = next(p for p in Document(BytesIO(data)).paragraphs if 'Important term' in p.text)
+        self.assertEqual(paragraph.style.name, 'List Bullet')
+        self.assertTrue(paragraph.runs[0].bold)
+
     def test_native_editable_blocks_preserve_literal_text_lines_tables_and_embedded_images(self):
         html = f'''<div class="toolbar">PRIVATE TOOLBAR</div><section class="page">
         <div class="masthead"><img src="{URI}"><div><strong>PETROL ZONE</strong><span>SALES CONTRACT</span></div><div class="reference">SC-1<br>2026-10-19</div></div>

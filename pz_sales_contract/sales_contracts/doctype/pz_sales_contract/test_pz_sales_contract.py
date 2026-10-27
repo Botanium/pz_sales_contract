@@ -235,10 +235,11 @@ class TestPZSalesContract(IntegrationTestCase):
             self.assertEqual(set(context['seller']), {'name', 'address', 'email', 'phone', 'signatory', 'position'})
             print_blank_template(doc.name)
         soup = BeautifulSoup(html, 'html.parser')
-        self.assertEqual(len(soup.select('.page')), 6)  # 17 clauses, five per page
+        self.assertEqual(len(soup.select('.page')), 6)  # 20 clauses, five per page
         self.assertEqual(len(soup.select('.products tbody tr')), 3)
         self.assertTrue(all(not td.get_text().strip() for td in soup.select('.products tbody td')))
-        self.assertEqual([p.get_text() for p in soup.select('.terms p') if 'Contract reference:' not in p.get_text()], clauses_for_contract(doc))
+        self.assertEqual([('• ' if node.name == 'li' else '') + node.get_text() for node in soup.select('.terms p, .terms li') if 'Contract reference:' not in node.get_text()], clauses_for_contract(doc))
+        self.assertEqual(len(soup.select('.terms li > strong')), 3)
         self.assertEqual(soup.select_one('.seller-stamp')['src'], stamp)
         for value in (doc.seller_name, 'Approved Synthetic Seller', 'Synthetic CEO', doc.incoterm,
                 '50%', '12'):
@@ -371,7 +372,7 @@ class TestPZSalesContract(IntegrationTestCase):
             self.assertIn(value, text)
         self.assertNotIn('UNSAVED PRIVATE', text)
         for clause in clauses_for_contract(doc):
-            self.assertIn(clause, paragraphs)
+            self.assertIn(clause[2:] if clause.startswith('• ') else clause, paragraphs)
         with ZipFile(BytesIO(data)) as archive:
             self.assertIn(stamp_bytes, [archive.read(name) for name in archive.namelist() if name.startswith('word/media/')])
             self.assertNotIn(b'TargetMode="External"', archive.read('word/_rels/document.xml.rels'))
@@ -396,7 +397,7 @@ class TestPZSalesContract(IntegrationTestCase):
         for value in (doc.seller_name, doc.seller_signatory, doc.seller_position, doc.incoterm):
             self.assertIn(value, text)
         for clause in clauses_for_contract(doc):
-            self.assertIn(clause, paragraphs)
+            self.assertIn(clause[2:] if clause.startswith('• ') else clause, paragraphs)
         with ZipFile(BytesIO(data)) as archive:
             all_xml = '\n'.join(archive.read(name).decode() for name in archive.namelist() if name.endswith('.xml'))
         for value in (doc.name, doc.customer_name, doc.customer, doc.items[0].item_code,
@@ -417,7 +418,7 @@ class TestPZSalesContract(IntegrationTestCase):
             for endpoint in (download_word, download_blank_word):
                 paragraphs = self.word_paragraphs(self.word_response(endpoint, doc.name))
                 for clause in clauses_for_contract(doc):
-                    self.assertIn(clause, paragraphs)
+                    self.assertIn(clause[2:] if clause.startswith('• ') else clause, paragraphs)
             text = '\n'.join(self.word_paragraphs(self.word_response(download_word, doc.name)))
             self.assertEqual('Commercial Schedule' in text.split('Contract Terms')[0], version == 'v1')
         doc.db_set(dict(contract_terms_text='CUSTOM <script>literal</script> & terms\nSecond line', docstatus=2))
@@ -712,7 +713,7 @@ class TestPZSalesContract(IntegrationTestCase):
         from bs4 import BeautifulSoup
         for days in (None, 0, 30, 50, 60, 137):
             doc = contract(cargo_ready_within_days=days)
-            self.assertEqual(doc.terms_version, 'v6')
+            self.assertEqual(doc.terms_version, CURRENT_TERMS_VERSION)
             text = BeautifulSoup(frappe.get_print(doc.doctype, doc.name), 'html.parser').get_text()
             self.assertIn('The Seller shall arrange and pay for cargo loading at the factory', text)
             self.assertIn('all Iraqi export customs formalities', text)
@@ -2484,9 +2485,10 @@ class TestPZSalesContract(IntegrationTestCase):
             soup = BeautifulSoup(rendered, 'html.parser')
             printed_text = soup.get_text()
             for clause in expected_clauses:
-                self.assertIn(clause, printed_text)
+                self.assertIn(clause[2:] if clause.startswith('• ') else clause, printed_text)
             self.assertEqual(len(soup.select('section.terms')), 4)
             self.assertEqual(len(soup.select('section.terms p')), 16)
+            self.assertEqual(len(soup.select('section.terms li > strong')), 3)
             self.assertEqual(soup.select_one('img.seller-stamp').get('src'), expected_stamp)
             self.assertIn('>DRAFT<', rendered)
             self.assertIn('id="header-html"', rendered)

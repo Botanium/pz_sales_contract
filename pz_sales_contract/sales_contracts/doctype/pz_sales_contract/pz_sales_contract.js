@@ -78,7 +78,7 @@ function parsedAdvancePercentage(value) {
 }
 
 function hasFixedHistoricalSplit(frm) {
-  return !(frm.is_new() && !frm.doc.amended_from) && !["v5", "v6"].includes(frm.doc.terms_version);
+  return !(frm.is_new() && !frm.doc.amended_from) && !["v5", "v6", "v7"].includes(frm.doc.terms_version);
 }
 
 function guardCargoReadinessInput(frm) {
@@ -773,9 +773,9 @@ frappe.ui.form.on("PZ Sales Contract", {
     updateCargoReadiness(frm);
     updateContractTermsVisibility(frm);
     loadContractTerms(frm);
-    const simplifiedContract = ["v2", "v3", "v4", "v5", "v6"].includes(frm.doc.terms_version) || (frm.is_new() && !frm.doc.amended_from);
+    const simplifiedContract = ["v2", "v3", "v4", "v5", "v6", "v7"].includes(frm.doc.terms_version) || (frm.is_new() && !frm.doc.amended_from);
     const advancePercentageEditable = (frm.is_new() && !frm.doc.amended_from)
-      || (["v5", "v6"].includes(frm.doc.terms_version) && Number(frm.doc.docstatus || 0) === 0 && !frm.doc.amended_from);
+      || (["v5", "v6", "v7"].includes(frm.doc.terms_version) && Number(frm.doc.docstatus || 0) === 0 && !frm.doc.amended_from);
     frm.set_df_property("advance_percentage", "read_only", !advancePercentageEditable);
     const displayAdvancePercentage = hasFixedHistoricalSplit(frm)
       ? defaultAdvancePercentage : (parsedAdvancePercentage(frm.doc.advance_percentage) ?? defaultAdvancePercentage);

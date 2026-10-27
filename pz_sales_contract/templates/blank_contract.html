@@ -27,6 +27,7 @@ td { border:1px solid #ccc; padding:7px; vertical-align:top; font-size:9pt; }
 .signatures td { height:44mm; line-height:2.2; }
 .seller-details { white-space:pre-line; overflow-wrap:anywhere; }
 .terms p { white-space:pre-line; overflow-wrap:anywhere; page-break-inside:avoid; }
+.terms li { overflow-wrap:anywhere; page-break-inside:avoid; margin-bottom:8px; }
 .seller-stamp { display:block; width:132px; max-height:84px; margin:10px 0; }
 .toolbar { text-align:center; padding:12px; } button { font:inherit; padding:8px 20px; cursor:pointer; }
 @media print { body { background:white; } .page { width:auto; margin:0; padding:0; } .toolbar { display:none; } th { print-color-adjust:exact; -webkit-print-color-adjust:exact; } }
@@ -60,7 +61,7 @@ td { border:1px solid #ccc; padding:7px; vertical-align:top; font-size:9pt; }
 <div class="masthead"><img src="{{ logo|e }}" alt="Petrol Zone logo"><div><strong>PETROL ZONE</strong><span>SALES CONTRACT · CONTRACT TERMS</span></div></div>
 <p>Contract reference: <span class="line"></span> &nbsp; Date: <span class="line"></span></p>
 <h2>Contract Terms · {{ incoterm|e }}</h2>
-{% for clause in clauses[start:start + 5] %}<p>{{ clause|e }}</p>{% endfor %}
+{% for clause in clauses[start:start + 5] %}{% if clause.startswith('• ') %}<ul><li><strong>{{ clause[2:]|e }}</strong></li></ul>{% else %}<p>{{ clause|e }}</p>{% endif %}{% endfor %}
 </section>
 {% endfor %}
 <section class="page">

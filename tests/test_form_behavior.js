@@ -151,7 +151,7 @@ test("invalid percentages are rejected and historical/amended percentages stay p
   assert.equal(amendment.fieldProperties["advance_percentage.read_only"], true);
 });
 
-for (const version of ["v2", "v3", "v4", "v5"]) {
+for (const version of ["v2", "v3", "v4", "v5", "v6", "v7"]) {
   test(`saved ${version} contracts keep the simplified specification editor hidden`, async () => {
     const ui = desk(newDoc(`${version}-saved`, { __islocal: 0, terms_version: version }));
     await ui.refresh();
