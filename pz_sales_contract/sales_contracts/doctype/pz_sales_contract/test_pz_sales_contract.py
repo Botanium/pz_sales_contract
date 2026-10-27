@@ -1311,7 +1311,7 @@ class TestPZSalesContract(IntegrationTestCase):
         with self.assertRaises(frappe.FrappeTypeError):
             get_company_defaults({'name': COMPANY})
 
-    def test_contract_incoterms_require_builtin_or_company_enabled_master(self):
+    def test_contract_incoterms_allow_existing_native_masters(self):
         self.clear_synthetic_company_defaults()
         self.synthetic_company_defaults(
             additional_incoterms=[dict(incoterm='FCA')],
@@ -1320,8 +1320,12 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertEqual(contract(incoterm='FCA').incoterm, 'FCA')
 
         self.clear_synthetic_company_defaults()
-        with self.assertRaises(frappe.ValidationError):
-            contract(incoterm='FCA')
+        for code in ('FCA', 'CPT', 'DAP'):
+            if not frappe.db.exists('Incoterm', code):
+                frappe.get_doc(dict(doctype='Incoterm', incoterm=code, title=code)).insert()
+            self.assertEqual(contract(incoterm=code).incoterm, code)
+        with self.assertRaises(frappe.LinkValidationError):
+            contract(incoterm='PZ-NOT-AN-INCOTERM')
 
     def test_defaults_record_company_cannot_be_changed(self):
         self.clear_synthetic_company_defaults()

@@ -251,40 +251,15 @@ test("each New contract loads defaults in a reused Desk form", async () => {
   assert.equal(ui.frm.doc.seller_signatory, profile.seller_signatory);
 });
 
-test("new contracts offer the base and configured Incoterms without silently selecting one", async () => {
-  const ui = desk();
-  const options = () => ui.queries.incoterm().filters.name[1];
-  assert.deepEqual([...options()], ["EXW", "FOB", "CIF"]);
-  assert.equal(ui.frm.doc.incoterm, undefined);
+test("Incoterm choices are unfiltered and company defaults preserve selections", async () => {
+  const ui = desk(newDoc("new-1", {incoterm: "CPT"}));
+  assert.deepEqual(Object.keys(ui.queries.incoterm()), []);
   await ui.refresh(); await ui.respond();
-  assert.deepEqual([...options()], ["EXW", "FOB", "CIF", "FCA"]);
-  assert.equal(ui.frm.doc.incoterm, undefined);
-});
-
-test("company changes clear a disallowed Incoterm and preserve allowed selections", async () => {
-  const ui = desk();
-  const options = () => [...ui.queries.incoterm().filters.name[1]];
-  await ui.refresh(); await ui.respond();
-  await ui.frm.set_value("incoterm", "FCA");
+  assert.equal(ui.frm.doc.incoterm, "CPT");
   await ui.frm.set_value("company", "Another Seller"); await flush();
-  assert.equal(options().includes("FCA"), false);
   await ui.respond(1, { ...profile, allowed_incoterms: ["DAP"] });
-  assert.equal(ui.frm.doc.incoterm, null);
-  assert.deepEqual(options(), ["EXW", "FOB", "CIF", "DAP"]);
-
-  await ui.frm.set_value("incoterm", "FOB");
-  await ui.frm.set_value("company", "Third Seller"); await flush();
-  await ui.respond(2, { ...profile, allowed_incoterms: [] });
-  assert.equal(ui.frm.doc.incoterm, "FOB");
-  await ui.respond(0); // A stale company response must not restore its choices.
-  assert.deepEqual(options(), ["EXW", "FOB", "CIF"]);
-});
-
-test("saved contracts and amendments retain their historical Incoterm option", () => {
-  for (const extra of [{ __islocal: 0 }, { amended_from: "Cancelled Original" }]) {
-    const ui = desk(newDoc("historical", { incoterm: "FCA", ...extra }));
-    assert.equal(ui.queries.incoterm().filters.name[1].includes("FCA"), true);
-  }
+  assert.equal(ui.frm.doc.incoterm, "CPT");
+  assert.deepEqual(Object.keys(ui.queries.incoterm()), []);
 });
 
 for (const replacement of [newDoc("amendment", { amended_from: "Cancelled Original" }),
@@ -371,11 +346,10 @@ test("changing Company clears seller defaults and keeps customer and deal values
   assert.equal(ui.frm.doc.seller_signatory, "Another Signer");
 });
 
-test("an amendment requests allowed Incoterms without applying current company defaults", async () => {
+test("an amendment retains its seller details without applying current company defaults", async () => {
   const ui = desk(newDoc("amendment", { amended_from: "Cancelled Original", seller_position: "Original Terms" }));
   await ui.refresh(); await ui.frm.set_value("currency", "EUR");
-  assert.equal(ui.requests.length, 1);
-  assert.match(ui.requests[0].method, /get_allowed_incoterms$/);
+  assert.equal(ui.requests.length, 0);
   assert.equal(ui.frm.doc.seller_position, "Original Terms");
 });
 

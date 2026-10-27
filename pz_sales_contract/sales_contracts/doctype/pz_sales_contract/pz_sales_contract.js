@@ -1,4 +1,3 @@
-const defaultContractIncoterms = ["EXW", "FOB", "CIF"];
 const defaultAdvancePercentage = 30;
 const contractChildLookupStates = new WeakMap();
 const partyFields = ["seller_name", "seller_address_display", "seller_email", "seller_phone",
@@ -241,7 +240,6 @@ function ensureCompanyDefaultsDocument(frm) {
       _pzCompanyDefaultObservedValues: Object.fromEntries(
         companyDefaultFields.map((fieldname) => [fieldname, frm.doc[fieldname]])
       ),
-      _pzContractIncoterms: [...defaultContractIncoterms],
       // Native Duplicate and Quick Entry mark their existing values as prefilled.
       _pzCompanyDefaultsPrefilled: frm.doc.__run_link_triggers === false,
       _pzLastSelectedCompany: frm.doc.company || null,
@@ -522,18 +520,6 @@ function loadCompanyDefaults(frm, expectedCompany, requestId) {
           if (!isCurrent()) return;
           frm._pzCompanyDefaultsLoadedFor = company;
           const configured = response.message || {};
-          frm._pzContractIncoterms = [...new Set([
-            ...defaultContractIncoterms,
-            ...(Array.isArray(configured.allowed_incoterms) ? configured.allowed_incoterms : []),
-          ])];
-          if (doc.incoterm && !frm._pzContractIncoterms.includes(doc.incoterm)) {
-            await frm.set_value("incoterm", null);
-            if (!isCurrent()) return;
-            frappe.show_alert({
-              message: __("Choose an Incoterm allowed for the selected company."),
-              indicator: "orange",
-            });
-          }
           const values = {};
           const currencyCompatible = !isMissingValue("currency", configured.currency)
             && (isMissingValue("currency", frm.doc.currency) || frm.doc.currency === configured.currency);
@@ -603,24 +589,6 @@ function loadCompanyDefaults(frm, expectedCompany, requestId) {
   }));
 }
 
-function loadContractIncoterms(frm) {
-  const company = frm.doc.company;
-  if (!company || (frm.is_new() && !frm.doc.amended_from)) return;
-  const doc = frm.doc;
-  const requestId = (frm._pzContractIncotermsRequestId || 0) + 1;
-  frm._pzContractIncotermsRequestId = requestId;
-  frappe.call({
-    method: "pz_sales_contract.sales_contracts.doctype.pz_contract_defaults.pz_contract_defaults.get_allowed_incoterms",
-    args: { company },
-    callback(response) {
-      if (frm.doc !== doc || frm.doc.company !== company
-        || frm._pzContractIncotermsRequestId !== requestId) return;
-      const configured = Array.isArray(response.message) ? response.message : [];
-      frm._pzContractIncoterms = [...new Set([...defaultContractIncoterms, ...configured])];
-    },
-  });
-}
-
 function clearCompanySpecificValues(frm) {
   ensureCompanyDefaultsDocument(frm);
   if (!frm.is_new() || frm.doc.amended_from) return;
@@ -641,7 +609,6 @@ function clearCompanySpecificValues(frm) {
   frm._pzCompanyDefaultsConfiguredBank = null;
   frm._pzCompanyDefaultsHasCurrencyDependentDefaults = false;
   frm._pzCompanyDefaultsAppliedValues = {};
-  frm._pzContractIncoterms = [...defaultContractIncoterms];
   frm._pzCompanyDefaultTouchedFields = new Set();
   frm._pzCompanyDefaultEditRevisions = {};
   frm._pzCompanyDefaultWrites = {};
@@ -700,10 +667,7 @@ frappe.ui.form.on("PZ Sales Contract", {
   ...registerChecklistEvents(),
   setup(frm) {
     ensureCompanyDefaultsDocument(frm);
-    frm.set_query("incoterm", () => ({ filters: { name: ["in", [...new Set([
-      ...(frm._pzContractIncoterms || defaultContractIncoterms),
-      ...((!frm.is_new() || frm.doc.amended_from) && frm.doc.incoterm ? [frm.doc.incoterm] : []),
-    ])]] } }));
+    frm.set_query("incoterm", () => ({}));
     frm.set_query("item_code", "items", () => ({ filters: { disabled: 0, is_sales_item: 1 } }));
     frm.set_query("grade_master", "items", () => ({ filters: { disabled: 0 } }));
     frm.set_query("contract_location", () => ({ filters: { disabled: 0 } }));
@@ -794,7 +758,6 @@ frappe.ui.form.on("PZ Sales Contract", {
     }).then(() => {
       if (frm.doc !== doc) return;
       if (frm.is_new() && !frm.doc.amended_from && frm.doc.company) loadCompanyDefaults(frm);
-      else if (frm.doc.company) loadContractIncoterms(frm);
     });
     if (frm.is_new() && !frm.doc.amended_from && frm.doc.company && frappe.user.has_role("System Manager")) {
       frm.add_custom_button("Company Contract Defaults", () => {
