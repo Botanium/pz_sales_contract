@@ -1708,10 +1708,13 @@ class TestPZSalesContract(IntegrationTestCase):
         self.assertIn('>DRAFT<',html)
         self.assertNotIn('FIRST ADVANCE',html)
         clauses = json.loads((Path(__file__).resolve().parents[3] / 'terms.json').read_text())
-        self.assertEqual(len(clauses), 16)
-        for number, clause in enumerate(clauses, start=1):
+        self.assertEqual(len(clauses), 19)
+        for number, clause in enumerate(clauses[:16], start=1):
             heading = clause.split('. ', 1)[1].split('. ', 1)[0]
             self.assertIn(f'{number}. {heading}.', html)
+        from bs4 import BeautifulSoup
+        bullets = BeautifulSoup(html, 'html.parser').select('.terms li > strong')
+        self.assertEqual([node.get_text() for node in bullets], [clause[2:] for clause in clauses[16:]])
         self.assertIn('Contract Amount · USD',html)
         self.assertIn('linked Sales Order or invoice',html)
         self.assertNotIn('Appendix A',html)
