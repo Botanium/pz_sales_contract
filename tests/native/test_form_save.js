@@ -193,18 +193,15 @@ test("new contract boot metadata hides FX and price-list inputs before form refr
   assert.equal(ui.frm.fields_dict.selling_price_list.df.hidden, 1);
 });
 
-test("native Save requires a replacement after a disallowed Incoterm is cleared", async () => {
+test("native Save preserves an existing Incoterm outside the former allowlist", async () => {
   const ui = nativeDesk(); await ui.setup();
-  ui.frm.doc.incoterm = "FCA";
+  ui.frm.doc.incoterm = "CPT";
   await ui.frm.refresh(); await flush(); await ui.respond({});
-  assert.equal(ui.frm.doc.incoterm, null);
-  assert.equal(ui.frappe.ui.form.check_mandatory(ui.frm), false);
-  await ui.save();
-  assert.equal(ui.saves.length, 0);
-  await ui.frm.set_value("incoterm", "EXW");
+  assert.equal(ui.frm.doc.incoterm, "CPT");
+  assert.equal(ui.frappe.ui.form.check_mandatory(ui.frm), true);
   await ui.save();
   assert.equal(ui.saves.length, 1);
-  assert.equal(ui.saves[0].incoterm, "EXW");
+  assert.equal(ui.saves[0].incoterm, "CPT");
 });
 
 test("native Save cannot overtake a paused Company clear", async () => {
